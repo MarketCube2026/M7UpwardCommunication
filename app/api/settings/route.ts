@@ -1,0 +1,13 @@
+import { NextResponse } from "next/server";
+
+export async function GET() {
+  const baseUrl = process.env.AI_BASE_URL?.trim() ?? "";
+  const apiKey = process.env.AI_API_KEY?.trim() ?? "";
+  const model = process.env.AI_MODEL?.trim() ?? "";
+  const demoMode = process.env.DEMO_MODE === "true";
+  let provider = "未配置";
+  if (/deepseek/i.test(baseUrl)) provider = "DeepSeek";
+  else if (/openai/i.test(baseUrl)) provider = "OpenAI";
+  else if (baseUrl) provider = "OpenAI-compatible";
+  return NextResponse.json({ configured: Boolean(baseUrl && apiKey && model) && !demoMode, provider, model: model || null, demoMode });
+}

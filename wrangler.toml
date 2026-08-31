@@ -1,0 +1,19 @@
+name = "zhibi-api"
+main = "workers/api/src/index.ts"
+compatibility_date = "2026-08-31"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "zhibi"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
+
+[[r2_buckets]]
+binding = "FILES"
+bucket_name = "zhibi-files"
+
+[vars]
+AI_BASE_URL = "https://api.deepseek.com"
+AI_MODEL = "deepseek-chat"
+DEMO_MODE = "false"
+# Restrict this to the final Pages origin after deployment, for example:
+# FRONTEND_ORIGIN = "https://zhibi.pages.dev"

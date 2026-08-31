@@ -1,0 +1,60 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Supervisor {
+  id                  String      @id @default(cuid())
+  name                String
+  position            String?
+  relation            String?
+  tags                String      @default("[]")
+  communicationPrefs  String      @default("{}")
+  workStyle           String      @default("{}")
+  taboos              String?
+  notes               String?
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+  rehearsals          Rehearsal[]
+}
+
+model Scenario {
+  id                String      @id @default(cuid())
+  name              String
+  description       String?
+  referenceTemplate String?
+  builtin           Boolean     @default(false)
+  createdAt         DateTime    @default(now())
+  rehearsals        Rehearsal[]
+}
+
+model Rehearsal {
+  id                String      @id @default(cuid())
+  supervisorId      String
+  scenarioId        String
+  scenarioName      String
+  supervisorSnapshot String
+  inputText         String
+  actionPlan        String?
+  evaluation        String
+  mode              String      @default("demo")
+  createdAt         DateTime    @default(now())
+  supervisor        Supervisor  @relation(fields: [supervisorId], references: [id], onDelete: Cascade)
+  scenario          Scenario    @relation(fields: [scenarioId], references: [id], onDelete: Cascade)
+  debrief           Debrief?
+}
+
+model Debrief {
+  id          String   @id @default(cuid())
+  rehearsalId String   @unique
+  outcome     String
+  rating      Int?
+  variance    String?
+  nextAction  String?
+  createdAt   DateTime @default(now())
+  rehearsal   Rehearsal @relation(fields: [rehearsalId], references: [id], onDelete: Cascade)
+}
