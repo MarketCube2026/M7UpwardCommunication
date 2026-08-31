@@ -1,0 +1,13 @@
+.agents
+.npm-cache
+deliverables
+tools
+skills-lock.json
+tsconfig.tsbuildinfo
+reference
+work
+.env*
+prisma/data
+node_modules
+.next
+out
