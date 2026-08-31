@@ -5,7 +5,7 @@ compatibility_date = "2026-08-31"
 [[d1_databases]]
 binding = "DB"
 database_name = "zhibi"
-database_id = "REPLACE_WITH_D1_DATABASE_ID"
+database_id = "c772bed0-2c7a-4853-9633-91f45188cf90"
 
 [[r2_buckets]]
 binding = "FILES"
