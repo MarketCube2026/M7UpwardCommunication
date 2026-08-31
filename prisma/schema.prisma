@@ -7,54 +7,333 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model User {
+  id             String           @id @default(cuid())
+  phone          String           @unique
+  nickname       String?
+  avatarUrl      String?
+  status         String           @default("ACTIVE")
+  lastLoginAt    DateTime?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  sessions       UserSession[]
+  wechatIdentity WeChatIdentity?
+  supervisors    Supervisor[]
+  scenarios      Scenario[]
+  rehearsals     Rehearsal[]
+  debriefs       Debrief[]
+  orders         Order[]
+  creditLots     CreditLot[]
+  quotas         DailyQuota[]
+  usageAttempts  UsageAttempt[]
+  creditLedger   CreditLedger[]
+  analytics      AnalyticsEvent[]
+}
+
+model UserSession {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model OtpChallenge {
+  id          String    @id @default(cuid())
+  phone       String
+  purpose     String    @default("LOGIN")
+  codeHash    String
+  attempts    Int       @default(0)
+  expiresAt   DateTime
+  consumedAt  DateTime?
+  requestedIp String?
+  createdAt   DateTime  @default(now())
+
+  @@index([phone, createdAt])
+}
+
+model WeChatIdentity {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  openId    String   @unique
+  unionId   String?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model AdminAccount {
+  id           String          @id @default(cuid())
+  username     String          @unique
+  passwordHash String
+  status       String          @default("ACTIVE")
+  lastLoginAt  DateTime?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  sessions     AdminSession[]
+  auditLogs    AdminAuditLog[]
+  refunds      Refund[]
+}
+
+model AdminSession {
+  id        String       @id @default(cuid())
+  adminId   String
+  tokenHash String       @unique
+  expiresAt DateTime
+  createdAt DateTime     @default(now())
+  admin     AdminAccount @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@index([adminId])
+}
+
+model AdminAuditLog {
+  id         String       @id @default(cuid())
+  adminId    String
+  action     String
+  targetType String
+  targetId   String?
+  beforeJson String?
+  afterJson  String?
+  reason     String?
+  createdAt  DateTime     @default(now())
+  admin      AdminAccount @relation(fields: [adminId], references: [id], onDelete: Restrict)
+
+  @@index([adminId, createdAt])
+}
+
 model Supervisor {
-  id                  String      @id @default(cuid())
-  name                String
-  position            String?
-  relation            String?
-  tags                String      @default("[]")
-  communicationPrefs  String      @default("{}")
-  workStyle           String      @default("{}")
-  taboos              String?
-  notes               String?
-  createdAt           DateTime    @default(now())
-  updatedAt           DateTime    @updatedAt
-  rehearsals          Rehearsal[]
+  id                 String      @id @default(cuid())
+  userId             String?
+  name               String
+  position           String?
+  relation           String?
+  tags               String      @default("[]")
+  communicationPrefs String      @default("{}")
+  workStyle          String      @default("{}")
+  taboos             String?
+  notes              String?
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+  user               User?       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rehearsals         Rehearsal[]
+
+  @@index([userId])
 }
 
 model Scenario {
   id                String      @id @default(cuid())
+  ownerUserId       String?
   name              String
   description       String?
   referenceTemplate String?
   builtin           Boolean     @default(false)
+  active            Boolean     @default(true)
+  sortOrder         Int         @default(0)
   createdAt         DateTime    @default(now())
+  owner             User?       @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
   rehearsals        Rehearsal[]
+
+  @@index([ownerUserId])
 }
 
 model Rehearsal {
-  id                String      @id @default(cuid())
-  supervisorId      String
-  scenarioId        String
-  scenarioName      String
+  id                 String        @id @default(cuid())
+  userId             String?
+  supervisorId       String
+  scenarioId         String
+  scenarioName       String
   supervisorSnapshot String
-  inputText         String
-  actionPlan        String?
-  evaluation        String
-  mode              String      @default("demo")
-  createdAt         DateTime    @default(now())
-  supervisor        Supervisor  @relation(fields: [supervisorId], references: [id], onDelete: Cascade)
-  scenario          Scenario    @relation(fields: [scenarioId], references: [id], onDelete: Cascade)
-  debrief           Debrief?
+  inputText          String
+  actionPlan         String?
+  evaluation         String
+  mode               String        @default("demo")
+  createdAt          DateTime      @default(now())
+  user               User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  supervisor         Supervisor    @relation(fields: [supervisorId], references: [id], onDelete: Cascade)
+  scenario           Scenario      @relation(fields: [scenarioId], references: [id], onDelete: Cascade)
+  debrief            Debrief?
+  usageAttempt       UsageAttempt?
+
+  @@index([userId, createdAt])
+  @@index([supervisorId])
 }
 
 model Debrief {
-  id          String   @id @default(cuid())
-  rehearsalId String   @unique
+  id          String    @id @default(cuid())
+  userId      String?
+  rehearsalId String    @unique
   outcome     String
   rating      Int?
   variance    String?
   nextAction  String?
-  createdAt   DateTime @default(now())
+  createdAt   DateTime  @default(now())
+  user        User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
   rehearsal   Rehearsal @relation(fields: [rehearsalId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Package {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  name        String
+  credits     Int
+  priceFen    Int
+  description String?
+  position    String?
+  sortOrder   Int      @default(0)
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  orders      Order[]
+}
+
+model Order {
+  id              String         @id @default(cuid())
+  userId          String
+  packageId       String?
+  packageCode     String
+  packageName     String
+  credits         Int
+  amountFen       Int
+  status          String         @default("CREATED")
+  provider        String         @default("MOCK")
+  providerOrderId String?        @unique
+  paidAt          DateTime?
+  closedAt        DateTime?
+  refundedAt      DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  user            User           @relation(fields: [userId], references: [id], onDelete: Restrict)
+  package         Package?       @relation(fields: [packageId], references: [id], onDelete: SetNull)
+  creditLot       CreditLot?
+  refund          Refund?
+  ledgerEntries   CreditLedger[]
+
+  @@index([userId, createdAt])
+  @@index([status])
+}
+
+model Refund {
+  id              String       @id @default(cuid())
+  orderId         String       @unique
+  adminId         String
+  amountFen       Int
+  creditsReversed Int
+  status          String       @default("SUCCEEDED")
+  reason          String
+  createdAt       DateTime     @default(now())
+  order           Order        @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  admin           AdminAccount @relation(fields: [adminId], references: [id], onDelete: Restrict)
+}
+
+model CreditLot {
+  id             String         @id @default(cuid())
+  userId         String
+  orderId        String?        @unique
+  creditsInitial Int
+  remaining      Int
+  source         String
+  createdAt      DateTime       @default(now())
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  order          Order?         @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  usageAttempts  UsageAttempt[]
+  ledgerEntries  CreditLedger[]
+
+  @@index([userId, createdAt])
+}
+
+model DailyQuota {
+  id       String         @id @default(cuid())
+  userId   String
+  dateKey  String
+  used     Int            @default(0)
+  reserved Int            @default(0)
+  user     User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  attempts UsageAttempt[]
+
+  @@unique([userId, dateKey])
+}
+
+model UsageAttempt {
+  id               String         @id @default(cuid())
+  userId           String
+  clientRequestId  String
+  status           String         @default("PENDING")
+  chargeSource     String
+  dailyQuotaId     String?
+  creditLotId      String?
+  rehearsalId      String?        @unique
+  promptTokens     Int?
+  completionTokens Int?
+  totalTokens      Int?
+  errorCode        String?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  user             User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  dailyQuota       DailyQuota?    @relation(fields: [dailyQuotaId], references: [id], onDelete: SetNull)
+  creditLot        CreditLot?     @relation(fields: [creditLotId], references: [id], onDelete: SetNull)
+  rehearsal        Rehearsal?     @relation(fields: [rehearsalId], references: [id], onDelete: SetNull)
+  ledgerEntries    CreditLedger[]
+
+  @@unique([userId, clientRequestId])
+  @@index([userId, createdAt])
+}
+
+model CreditLedger {
+  id             String        @id @default(cuid())
+  userId         String
+  type           String
+  delta          Int
+  balanceAfter   Int
+  orderId        String?
+  creditLotId    String?
+  usageAttemptId String?
+  reason         String?
+  createdAt      DateTime      @default(now())
+  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  order          Order?        @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  creditLot      CreditLot?    @relation(fields: [creditLotId], references: [id], onDelete: SetNull)
+  usageAttempt   UsageAttempt? @relation(fields: [usageAttemptId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+}
+
+model SystemSetting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+model PersonalityTag {
+  id        String   @id @default(cuid())
+  label     String   @unique
+  sortOrder Int      @default(0)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model DailyTip {
+  id        String   @id @default(cuid())
+  content   String
+  sortOrder Int      @default(0)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model AnalyticsEvent {
+  id        String   @id @default(cuid())
+  userId    String?
+  eventType String
+  metadata  String   @default("{}")
+  createdAt DateTime @default(now())
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([eventType, createdAt])
+  @@index([userId, createdAt])
 }

@@ -2,6 +2,8 @@ import { evaluationSchema, type rehearsalSchema } from "./schemas";
 import type { z } from "zod";
 
 type RehearsalInput = z.infer<typeof rehearsalSchema> & { supervisor: Record<string, unknown>; scenario: Record<string, unknown> };
+type TokenUsage = { promptTokens?: number; completionTokens?: number; totalTokens?: number };
+export type EvaluationWithUsage = z.infer<typeof evaluationSchema> & { usage?: TokenUsage };
 
 export const baselineRequirements = [
   "先讲结论：我怎么看、建议做什么、希望领导决定什么",
@@ -13,7 +15,7 @@ export const baselineRequirements = [
   "守住质量、合规、交付和客户影响边界，不把原话当作自己的判断",
 ];
 
-function demoEvaluation(input: RehearsalInput) {
+function demoEvaluation(input: RehearsalInput): EvaluationWithUsage {
   const hasPlan = Boolean(input.actionPlan?.trim());
   const hasStructure = /结果|数据|风险|下一步|计划|完成/.test(input.inputText);
   const baselineChecks = baselineRequirements.map((label, index) => ({ label, passed: index === 0 ? /结论|建议|希望|决定/.test(input.inputText) : index === 1 ? /数据|%|金额|天|周|月|同比|环比|基准/.test(input.inputText) : index === 2 ? /因为|依据|影响|风险|原因/.test(input.inputText) : index === 3 ? /方案|建议|选择|收益|成本|取舍/.test(input.inputText) : index === 4 ? hasPlan && /今天|明天|周五|负责人|同步|确认|完成/.test(`${input.inputText}${input.actionPlan ?? ""}`) : index === 5 ? true : /质量|合规|客户|交付|安全|边界/.test(input.inputText), note: "" }));
@@ -32,20 +34,36 @@ function demoEvaluation(input: RehearsalInput) {
   });
 }
 
-export async function evaluateRehearsal(input: RehearsalInput) {
+function tokenUsage(value: unknown): TokenUsage | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const source = value as Record<string, unknown>;
+  const toNumber = (entry: unknown) => Number.isInteger(Number(entry)) && Number(entry) >= 0 ? Number(entry) : undefined;
+  const promptTokens = toNumber(source.prompt_tokens);
+  const completionTokens = toNumber(source.completion_tokens);
+  const totalTokens = toNumber(source.total_tokens);
+  return promptTokens === undefined && completionTokens === undefined && totalTokens === undefined ? undefined : { promptTokens, completionTokens, totalTokens };
+}
+
+function useDemoMode() {
+  return process.env.NODE_ENV !== "production";
+}
+
+export async function evaluateRehearsal(input: RehearsalInput): Promise<EvaluationWithUsage> {
   const baseUrl = process.env.AI_BASE_URL?.trim();
   const apiKey = process.env.AI_API_KEY?.trim();
   const model = process.env.AI_MODEL?.trim();
-  if (process.env.DEMO_MODE === "true" || !baseUrl || !apiKey || !model) return demoEvaluation(input);
+  if (process.env.DEMO_MODE === "true") {
+    if (useDemoMode()) return demoEvaluation(input);
+    throw new Error("生产环境不允许使用演示评估");
+  }
+  if (!baseUrl || !apiKey || !model) {
+    if (useDemoMode()) return demoEvaluation(input);
+    throw new Error("AI 服务尚未配置");
+  }
 
   const prompt = `你是向上沟通教练。请基于上级画像和场景评估用户话术。附件中的管理原则必须作为基本要求：${baselineRequirements.map((x, i) => `${i + 1}.${x}`).join("；")}。若场景包含参考模板，只借鉴其结构和表达方式，不照搬其中的具体事实、数据或承诺。只返回 JSON，字段严格为：styleMatchScore, completenessScore, riskAlertScore, behaviorScore, keyStrengths, riskAlerts, suggestions, rewrittenVersion, behaviorFeedback, baselineChecks。baselineChecks 必须是包含 label、passed、note 的 7 项数组，逐项对应上述要求。评分 0-100。上级画像：${JSON.stringify(input.supervisor)}。场景：${JSON.stringify(input.scenario)}。话术：${input.inputText}。行动计划：${input.actionPlan ?? "未填写"}`;
   try {
-    const response = await fetch(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({ model, temperature: 0.3, messages: [{ role: "user", content: prompt }] }),
-      signal: AbortSignal.timeout(25000),
-    });
+    const response = await fetch(`${baseUrl.replace(/\/$/, "")}/chat/completions`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` }, body: JSON.stringify({ model, temperature: 0.3, messages: [{ role: "user", content: prompt }] }), signal: AbortSignal.timeout(25000) });
     if (!response.ok) throw new Error(`AI request failed: ${response.status}`);
     const data = await response.json();
     const content = data.choices?.[0]?.message?.content;
@@ -57,8 +75,10 @@ export async function evaluateRehearsal(input: RehearsalInput) {
     const strings = (value: unknown) => Array.isArray(value) ? value.map(String) : value == null ? [] : [String(value)];
     const rewritten = Array.isArray(parsed.rewrittenVersion) ? parsed.rewrittenVersion.map(String).join("\n") : String(parsed.rewrittenVersion ?? "");
     const checks = Array.isArray(parsed.baselineChecks) ? parsed.baselineChecks.map((item, index) => { const value = (item as Record<string, unknown>)?.passed; return { label: baselineRequirements[index] ?? String((item as Record<string, unknown>)?.label ?? "基本要求"), passed: value === true || String(value).toLowerCase() === "true", note: String((item as Record<string, unknown>)?.note ?? "") }; }) : baselineRequirements.map((label) => ({ label, passed: false, note: "模型未返回逐项判断" }));
-    return evaluationSchema.parse({ ...parsed, styleMatchScore: number(parsed.styleMatchScore, 70), completenessScore: number(parsed.completenessScore, 70), riskAlertScore: number(parsed.riskAlertScore, 70), behaviorScore: parsed.behaviorScore == null ? undefined : number(parsed.behaviorScore, 70), keyStrengths: strings(parsed.keyStrengths), riskAlerts: strings(parsed.riskAlerts), suggestions: strings(parsed.suggestions), rewrittenVersion: rewritten, behaviorFeedback: strings(parsed.behaviorFeedback), baselineChecks: checks, mode: "ai" });
+    const evaluation = evaluationSchema.parse({ ...parsed, styleMatchScore: number(parsed.styleMatchScore, 70), completenessScore: number(parsed.completenessScore, 70), riskAlertScore: number(parsed.riskAlertScore, 70), behaviorScore: parsed.behaviorScore == null ? undefined : number(parsed.behaviorScore, 70), keyStrengths: strings(parsed.keyStrengths), riskAlerts: strings(parsed.riskAlerts), suggestions: strings(parsed.suggestions), rewrittenVersion: rewritten, behaviorFeedback: strings(parsed.behaviorFeedback), baselineChecks: checks, mode: "ai" });
+    return { ...evaluation, usage: tokenUsage(data.usage) };
   } catch (error) {
+    if (!useDemoMode()) throw error;
     console.error("AI evaluation fallback:", error instanceof Error ? error.message : "unknown error");
     return demoEvaluation(input);
   }

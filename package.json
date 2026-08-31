@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "prisma generate && tsx prisma/init.ts && npm run db:seed && next build",
+    "build": "prisma generate && next build",
     "build:pages": "node scripts/build-pages.mjs",
     "start": "next start",
     "lint": "next lint",
@@ -13,11 +13,16 @@
     "cf:d1:local": "npx wrangler d1 execute zhibi --local --file=workers/api/schema.sql",
     "cf:d1:remote": "npx wrangler d1 execute zhibi --remote --file=workers/api/schema.sql",
     "cf:deploy:api": "npx wrangler deploy",
-    "cf:deploy:pages": "npx wrangler pages deploy out --project-name zhibi"
+    "cf:deploy:pages": "npx wrangler pages deploy out --project-name zhibi",
+    "db:migrate": "prisma db push",
+    "db:seed:dev": "tsx prisma/commercial-seed.ts",
+    "db:init:commercial": "tsx prisma/commercial-init.ts",
+    "test:commercial": "tsx tests/commercial-smoke.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.14.0",
     "@serwist/next": "^9.0.10",
+    "bcryptjs": "^3.0.3",
     "lucide-react": "^0.468.0",
     "next": "^15.4.6",
     "react": "^19.1.0",
