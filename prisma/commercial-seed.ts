@@ -12,7 +12,7 @@ async function main() {
   const packages = [
     { code: "trial-20", name: "尝鲜", credits: 20, priceFen: 300, description: "低价入门", position: "低价入门", sortOrder: 1 },
     { code: "regular-100", name: "常用", credits: 100, priceFen: 1000, description: "主力套餐", position: "主力套餐", sortOrder: 2 },
-    { code: "value-1000", name: "超值", credits: 1000, priceFen: 2000, description: "锁定重度用户", position: "锁定重度用户", sortOrder: 3 },
+    { code: "value-1000", name: "超值", credits: 1000, priceFen: 5000, description: "锁定重度用户", position: "锁定重度用户", sortOrder: 3 },
   ];
   for (const item of packages) await prisma.package.upsert({ where: { code: item.code }, update: item, create: item });
 
