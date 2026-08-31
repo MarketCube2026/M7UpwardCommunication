@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { hashSecret, issueUserSession, normalizePhone, recordEvent } from "@/lib/auth";
+import { isPublicBeta } from "@/lib/beta";
 
 export async function POST(request: Request) {
   const body = await request.json();
+  if (isPublicBeta()) return NextResponse.json({ error: "本轮内测仅限邀请用户" }, { status: 403 });
   const phone = normalizePhone(String(body.phone ?? ""));
   const code = String(body.code ?? "").trim();
   if (!phone || !/^\d{6}$/.test(code)) return NextResponse.json({ error: "手机号或验证码格式不正确" }, { status: 400 });

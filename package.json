@@ -17,7 +17,12 @@
     "db:migrate": "prisma db push",
     "db:seed:dev": "tsx prisma/commercial-seed.ts",
     "db:init:commercial": "tsx prisma/commercial-init.ts",
-    "test:commercial": "tsx tests/commercial-smoke.ts"
+    "prepare:beta-prisma": "node scripts/prepare-beta-prisma.mjs",
+    "db:push:beta": "npm run prepare:beta-prisma && prisma db push --schema .beta-prisma/schema.prisma",
+    "db:seed:beta": "npm run prepare:beta-prisma && prisma generate --schema .beta-prisma/schema.prisma && tsx prisma/commercial-seed.ts",
+    "vercel-build": "npm run prepare:beta-prisma && prisma generate --schema .beta-prisma/schema.prisma && prisma db push --schema .beta-prisma/schema.prisma && next build",
+    "test:commercial": "tsx tests/commercial-smoke.ts",
+    "test:beta": "tsx tests/beta-smoke.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.14.0",

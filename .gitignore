@@ -10,3 +10,6 @@ public/sw.js
 worker-configuration.d.ts
 work
 reference
+.beta-prisma
+.vercel
+.env*

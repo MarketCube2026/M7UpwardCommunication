@@ -19,6 +19,10 @@ export default function LoginPage() {
     fetch("/api/auth/me").then((response) => {
       if (response.ok) window.location.replace("/");
     });
+    fetch("/api/beta/status").then((response) => response.json()).then((data) => {
+      if (data.active) window.location.replace("/beta-login");
+    }).catch(() => undefined);
+
     fetch("/api/auth/wechat/status")
       .then((response) => response.json())
       .then((data) => setWechatMessage(data.message || "本地阶段待配置"))

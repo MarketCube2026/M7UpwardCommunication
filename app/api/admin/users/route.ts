@@ -1,4 +1,40 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/http";
-export async function GET(request:Request){const auth=await requireAdmin();if("response" in auth)return auth.response;const url=new URL(request.url);const q=url.searchParams.get("q")?.trim();const status=url.searchParams.get("status")||undefined;const users=await db.user.findMany({where:{...(q?{OR:[{phone:{contains:q}},{nickname:{contains:q}}]}:{}),...(status?{status}:{})},include:{creditLots:{select:{remaining:true}},orders:{where:{status:"PAID"},select:{id:true}}},orderBy:{createdAt:"desc"},take:100});return NextResponse.json(users.map((user)=>({...user,paidRemaining:user.creditLots.reduce((sum,lot)=>sum+lot.remaining,0),hasPaid:user.orders.length>0,creditLots:undefined,orders:undefined})));}
+export async function GET(request: Request) {
+  const auth = await requireAdmin();
+  if ("response" in auth) return auth.response;
+  const url = new URL(request.url);
+  const q = url.searchParams.get("q")?.trim();
+  const status = url.searchParams.get("status") || undefined;
+  const users = await db.user.findMany({
+    where: {
+      ...(q
+        ? { OR: [{ phone: { contains: q } }, { nickname: { contains: q } }] }
+        : {}),
+      ...(status ? { status } : {}),
+    },
+    include: {
+      creditLots: { select: { remaining: true, source: true } },
+      orders: { where: { status: "PAID" }, select: { id: true } },
+    },
+    orderBy: { createdAt: "desc" },
+    take: 100,
+  });
+  return NextResponse.json(
+    users.map((user) => ({
+      ...user,
+      paidRemaining: user.creditLots.reduce(
+        (sum, lot) => sum + (lot.source === "BETA_GRANT" ? 0 : lot.remaining),
+        0,
+      ),
+      betaRemaining: user.creditLots.reduce(
+        (sum, lot) => sum + (lot.source === "BETA_GRANT" ? lot.remaining : 0),
+        0,
+      ),
+      hasPaid: user.orders.length > 0,
+      creditLots: undefined,
+      orders: undefined,
+    })),
+  );
+}

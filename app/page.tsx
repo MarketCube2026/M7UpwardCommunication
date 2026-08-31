@@ -1,117 +1,1933 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { BrainCircuit, ChevronRight, ClipboardCheck, FileText, History, Home, LogOut, Plus, Settings, ShoppingBag, Sparkles, UserRound, Users, WalletCards, X } from "lucide-react";
+import {
+  BrainCircuit,
+  ChevronRight,
+  ClipboardCheck,
+  FileText,
+  History,
+  Home,
+  LogOut,
+  Plus,
+  Settings,
+  ShoppingBag,
+  Sparkles,
+  UserRound,
+  Users,
+  WalletCards,
+  X,
+} from "lucide-react";
 import { baselineRequirements } from "@/lib/ai";
 
-type Supervisor = { id: string; name: string; position?: string; relation?: string; tags: string; communicationPrefs: string; workStyle: string; taboos?: string; notes?: string };
-type Scenario = { id: string; name: string; description?: string; referenceTemplate?: string; builtin: boolean };
-type Evaluation = { styleMatchScore:number; completenessScore:number; riskAlertScore:number; behaviorScore?:number; keyStrengths:string[]; riskAlerts:string[]; suggestions:string[]; rewrittenVersion:string; behaviorFeedback?:string[]; baselineChecks?:Array<{label:string;passed:boolean;note:string}>; mode:"ai"|"demo" };
-type Rehearsal = { id:string; scenarioName:string; inputText:string; actionPlan?:string; createdAt:string; mode:string; evaluation?:Evaluation; supervisor?:Supervisor; debrief?:unknown };
-type AIStatus = { configured:boolean; provider:string; model:string|null; demoMode:boolean };
-type Usage = { dailyFreeLimit:number; freeRemainingToday:number; paidRemaining:number; totalRemaining:number };
-type PackageItem = { code:string; name:string; credits:number; priceFen:number; description?:string; position?:string };
-type OrderItem = { id:string; packageName:string; credits:number; amountFen:number; status:string; createdAt:string };
-type CurrentUser = { id:string; phone:string; nickname?:string };
+type Supervisor = {
+  id: string;
+  name: string;
+  position?: string;
+  relation?: string;
+  tags: string;
+  communicationPrefs: string;
+  workStyle: string;
+  taboos?: string;
+  notes?: string;
+};
+type Scenario = {
+  id: string;
+  name: string;
+  description?: string;
+  referenceTemplate?: string;
+  builtin: boolean;
+};
+type Evaluation = {
+  styleMatchScore: number;
+  completenessScore: number;
+  riskAlertScore: number;
+  behaviorScore?: number;
+  keyStrengths: string[];
+  riskAlerts: string[];
+  suggestions: string[];
+  rewrittenVersion: string;
+  behaviorFeedback?: string[];
+  baselineChecks?: Array<{ label: string; passed: boolean; note: string }>;
+  mode: "ai" | "demo";
+};
+type Rehearsal = {
+  id: string;
+  scenarioName: string;
+  inputText: string;
+  actionPlan?: string;
+  createdAt: string;
+  mode: string;
+  evaluation?: Evaluation;
+  supervisor?: Supervisor;
+  debrief?: unknown;
+};
+type AIStatus = {
+  configured: boolean;
+  provider: string;
+  model: string | null;
+  demoMode: boolean;
+};
+type Usage = {
+  dailyFreeLimit: number;
+  freeRemainingToday: number;
+  betaRemaining: number;
+  paidRemaining: number;
+  totalRemaining: number;
+};
+type BetaStatus = {
+  active: boolean;
+  inviteOnly: boolean;
+  grantCredits: number;
+};
+type PackageItem = {
+  code: string;
+  name: string;
+  credits: number;
+  priceFen: number;
+  description?: string;
+  position?: string;
+};
+type OrderItem = {
+  id: string;
+  packageName: string;
+  credits: number;
+  amountFen: number;
+  status: string;
+  createdAt: string;
+};
+type CurrentUser = { id: string; phone: string; nickname?: string };
 
-const navItems = [{ id:"home", label:"工作台", icon:Home }, { id:"people", label:"上级画像", icon:Users }, { id:"rehearse", label:"沟通演练", icon:Sparkles }, { id:"history", label:"历史复盘", icon:History }, { id:"pricing", label:"套餐购买", icon:WalletCards }, { id:"settings", label:"设置", icon:Settings }];
-const apiUrl = (path: string) => `${(process.env.NEXT_PUBLIC_API_BASE_URL ?? "").replace(/\/$/, "")}${path}`;
-const safeJson = (value:string|undefined, fallback:any) => { try { return value ? JSON.parse(value) : fallback; } catch { return fallback; } };
-const average = (e?:Evaluation) => e ? Math.round((e.styleMatchScore + e.completenessScore + e.riskAlertScore) / 3) : 0;
-const getEvaluation = (item:Rehearsal) => { const raw = item.evaluation as unknown; return typeof raw === "string" ? safeJson(raw, undefined) as Evaluation|undefined : raw as Evaluation|undefined; };
+const navItems = [
+  { id: "home", label: "工作台", icon: Home },
+  { id: "people", label: "上级画像", icon: Users },
+  { id: "rehearse", label: "沟通演练", icon: Sparkles },
+  { id: "history", label: "历史复盘", icon: History },
+  { id: "pricing", label: "套餐购买", icon: WalletCards },
+  { id: "settings", label: "设置", icon: Settings },
+];
+const apiUrl = (path: string) =>
+  `${(process.env.NEXT_PUBLIC_API_BASE_URL ?? "").replace(/\/$/, "")}${path}`;
+const safeJson = (value: string | undefined, fallback: any) => {
+  try {
+    return value ? JSON.parse(value) : fallback;
+  } catch {
+    return fallback;
+  }
+};
+const average = (e?: Evaluation) =>
+  e
+    ? Math.round(
+        (e.styleMatchScore + e.completenessScore + e.riskAlertScore) / 3,
+      )
+    : 0;
+const getEvaluation = (item: Rehearsal) => {
+  const raw = item.evaluation as unknown;
+  return typeof raw === "string"
+    ? (safeJson(raw, undefined) as Evaluation | undefined)
+    : (raw as Evaluation | undefined);
+};
 
 export default function Page() {
   const [view, setView] = useState("home");
   const [supervisors, setSupervisors] = useState<Supervisor[]>([]);
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
   const [history, setHistory] = useState<Rehearsal[]>([]);
-  const [selected, setSelected] = useState<Supervisor|null>(null);
+  const [selected, setSelected] = useState<Supervisor | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [showScenarioForm, setShowScenarioForm] = useState(false);
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState("");
   const [evaluating, setEvaluating] = useState(false);
-  const [result, setResult] = useState<{ record:Rehearsal; evaluation:Evaluation }|null>(null);
-  const [form, setForm] = useState({ name:"", position:"", relation:"直属上级", tags:"", channel:"微信", speed:"当天回复", formal:"3", challenge:"可接受", decision:"民主讨论", risk:"稳健", time:"重视时间", focus:"数据", taboos:"", notes:"" });
-  const [rehearse, setRehearse] = useState({ supervisorId:"", scenarioId:"", inputText:"", actionPlan:"" });
-  const [scenarioForm, setScenarioForm] = useState({ name:"", description:"", referenceTemplate:"" });
-  const [aiStatus, setAiStatus] = useState<AIStatus>({ configured:false, provider:"未配置", model:null, demoMode:true });
-  const [user, setUser] = useState<CurrentUser|null>(null);
-  const [usage, setUsage] = useState<Usage>({ dailyFreeLimit:3, freeRemainingToday:0, paidRemaining:0, totalRemaining:0 });
+  const [result, setResult] = useState<{
+    record: Rehearsal;
+    evaluation: Evaluation;
+  } | null>(null);
+  const [form, setForm] = useState({
+    name: "",
+    position: "",
+    relation: "直属上级",
+    tags: "",
+    channel: "微信",
+    speed: "当天回复",
+    formal: "3",
+    challenge: "可接受",
+    decision: "民主讨论",
+    risk: "稳健",
+    time: "重视时间",
+    focus: "数据",
+    taboos: "",
+    notes: "",
+  });
+  const [rehearse, setRehearse] = useState({
+    supervisorId: "",
+    scenarioId: "",
+    inputText: "",
+    actionPlan: "",
+  });
+  const [scenarioForm, setScenarioForm] = useState({
+    name: "",
+    description: "",
+    referenceTemplate: "",
+  });
+  const [aiStatus, setAiStatus] = useState<AIStatus>({
+    configured: false,
+    provider: "未配置",
+    model: null,
+    demoMode: true,
+  });
+  const [user, setUser] = useState<CurrentUser | null>(null);
+  const [usage, setUsage] = useState<Usage>({
+    dailyFreeLimit: 3,
+    freeRemainingToday: 0,
+    betaRemaining: 0,
+    paidRemaining: 0,
+    totalRemaining: 0,
+  });
   const [packages, setPackages] = useState<PackageItem[]>([]);
   const [orders, setOrders] = useState<OrderItem[]>([]);
   const [showBalance, setShowBalance] = useState(false);
+  const [beta, setBeta] = useState<BetaStatus>({
+    active: false,
+    inviteOnly: false,
+    grantCredits: 30,
+  });
+  const [intent, setIntent] = useState<{
+    id: string;
+    packageName: string;
+    amountFen: number;
+  } | null>(null);
+  const [intentReason, setIntentReason] = useState("");
 
-  const load = async () => { setLoading(true); try { const me=await fetch(apiUrl("/api/auth/me")); if(!me.ok){window.location.href="/login";return;} const account=await me.json(); setUser(account.user); setUsage(account.usage); const [a,b,c,d,e,f] = await Promise.all([fetch(apiUrl("/api/supervisors")), fetch(apiUrl("/api/scenarios")), fetch(apiUrl("/api/rehearsals")), fetch(apiUrl("/api/settings")), fetch(apiUrl("/api/packages")), fetch(apiUrl("/api/orders"))]); setSupervisors(await a.json()); setScenarios(await b.json()); setHistory(await c.json()); if (d.ok) setAiStatus(await d.json()); setPackages(await e.json()); if(f.ok)setOrders(await f.json()); } catch { setNotice("暂时无法连接服务，请检查网络后重试"); } finally { setLoading(false); } };
-  useEffect(() => { load(); const path = window.location.pathname; const mapped = path.includes("supervisors") ? "people" : path.includes("rehearse") ? "rehearse" : path.includes("history") ? "history" : path.includes("pricing") ? "pricing" : path.includes("settings") ? "settings" : "home"; setView(mapped); }, []);
-  useEffect(() => { if (supervisors.length && !rehearse.supervisorId) setRehearse((v) => ({ ...v, supervisorId: supervisors[0].id })); }, [supervisors, rehearse.supervisorId]);
-  useEffect(() => { if (scenarios.length && !rehearse.scenarioId) setRehearse((v) => ({ ...v, scenarioId: scenarios[0].id })); }, [scenarios, rehearse.scenarioId]);
+  const load = async () => {
+    setLoading(true);
+    try {
+      const me = await fetch(apiUrl("/api/auth/me"));
+      if (!me.ok) {
+        window.location.href = "/login";
+        return;
+      }
+      const account = await me.json();
+      setUser(account.user);
+      setUsage(account.usage);
+      const [a, b, c, d, e, f, g] = await Promise.all([
+        fetch(apiUrl("/api/supervisors")),
+        fetch(apiUrl("/api/scenarios")),
+        fetch(apiUrl("/api/rehearsals")),
+        fetch(apiUrl("/api/settings")),
+        fetch(apiUrl("/api/packages")),
+        fetch(apiUrl("/api/orders")),
+        fetch(apiUrl("/api/beta/status")),
+      ]);
+      setSupervisors(await a.json());
+      setScenarios(await b.json());
+      setHistory(await c.json());
+      if (d.ok) setAiStatus(await d.json());
+      setPackages(await e.json());
+      if (f.ok) setOrders(await f.json());
+      if (g.ok) setBeta(await g.json());
+    } catch {
+      setNotice("暂时无法连接服务，请检查网络后重试");
+    } finally {
+      setLoading(false);
+    }
+  };
+  useEffect(() => {
+    load();
+    const path = window.location.pathname;
+    const mapped = path.includes("supervisors")
+      ? "people"
+      : path.includes("rehearse")
+        ? "rehearse"
+        : path.includes("history")
+          ? "history"
+          : path.includes("pricing")
+            ? "pricing"
+            : path.includes("settings")
+              ? "settings"
+              : "home";
+    setView(mapped);
+  }, []);
+  useEffect(() => {
+    if (supervisors.length && !rehearse.supervisorId)
+      setRehearse((v) => ({ ...v, supervisorId: supervisors[0].id }));
+  }, [supervisors, rehearse.supervisorId]);
+  useEffect(() => {
+    if (scenarios.length && !rehearse.scenarioId)
+      setRehearse((v) => ({ ...v, scenarioId: scenarios[0].id }));
+  }, [scenarios, rehearse.scenarioId]);
   const recent = history.slice(0, 4);
-  const avgScore = history.length ? Math.round(history.reduce((sum, item) => sum + average(getEvaluation(item)), 0) / history.length) : 0;
+  const avgScore = history.length
+    ? Math.round(
+        history.reduce((sum, item) => sum + average(getEvaluation(item)), 0) /
+          history.length,
+      )
+    : 0;
 
-  const saveSupervisor = async (event: React.FormEvent) => { event.preventDefault(); const payload = { name:form.name, position:form.position, relation:form.relation, tags:form.tags.split(/[,，]/).map((x)=>x.trim()).filter(Boolean), communicationPrefs:{ channel:form.channel, speed:form.speed, formal:form.formal, challenge:form.challenge }, workStyle:{ decision:form.decision, risk:form.risk, time:form.time, focus:form.focus }, taboos:form.taboos, notes:form.notes }; const response = await fetch(apiUrl(selected ? `/api/supervisors/${selected.id}` : "/api/supervisors"), { method:selected?"PATCH":"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(payload) }); if (!response.ok) { setNotice((await response.json()).error ?? "保存失败"); return; } setNotice("档案已保存"); setShowForm(false); setSelected(null); setForm({ name:"", position:"", relation:"直属上级", tags:"", channel:"微信", speed:"当天回复", formal:"3", challenge:"可接受", decision:"民主讨论", risk:"稳健", time:"重视时间", focus:"数据", taboos:"", notes:"" }); load(); };
-  const saveScenario = async (event: React.FormEvent) => { event.preventDefault(); const response = await fetch(apiUrl("/api/scenarios"), { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(scenarioForm) }); const data = await response.json(); if (!response.ok) { setNotice(data.error ?? "场景保存失败"); return; } setScenarioForm({ name:"", description:"", referenceTemplate:"" }); setShowScenarioForm(false); setRehearse((value) => ({ ...value, scenarioId:data.id })); setNotice("自定义场景已添加"); load(); };
-  const editSupervisor = (person:Supervisor) => { const prefs=safeJson(person.communicationPrefs,{}), style=safeJson(person.workStyle,{}); setSelected(person); setForm({ name:person.name, position:person.position??"", relation:person.relation??"直属上级", tags:safeJson(person.tags,[]).join("、"), channel:prefs.channel??"微信", speed:prefs.speed??"当天回复", formal:prefs.formal??"3", challenge:prefs.challenge??"可接受", decision:style.decision??"民主讨论", risk:style.risk??"稳健", time:style.time??"重视时间", focus:style.focus??"数据", taboos:person.taboos??"", notes:person.notes??"" }); setShowForm(true); };
-  const runEvaluation = async (event:React.FormEvent) => { event.preventDefault(); setEvaluating(true); setResult(null); const response=await fetch(apiUrl("/api/rehearsals/evaluate"),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...rehearse,clientRequestId:crypto.randomUUID()})}); const data=await response.json(); if(!response.ok){if(response.status===402)setShowBalance(true);setNotice(data.error??"评估失败");setEvaluating(false);return;} setResult({record:data.record,evaluation:data.evaluation}); if(data.usage)setUsage(data.usage); setEvaluating(false); setNotice(data.evaluation?.mode==="ai"?"评估完成，已扣除1次并保存":"演示评估已保存，本次未扣次数"); load(); };
-  const nav = (id:string) => { setView(id); if(id!=="rehearse") setResult(null); };
-  const createOrder = async (packageCode:string) => { const response=await fetch(apiUrl("/api/orders"),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({packageCode})}); const data=await response.json(); if(!response.ok){setNotice(data.error??"创建订单失败");return;} setNotice("订单已创建，请在下方完成本地模拟支付"); load(); };
-  const payOrder = async (id:string) => { const response=await fetch(apiUrl(`/api/orders/${id}/mock-pay`),{method:"POST"}); const data=await response.json(); if(!response.ok){setNotice(data.error??"支付失败");return;} setUsage(data.usage); setNotice("模拟支付成功，次数已到账"); load(); };
-  const logout = async () => { await fetch(apiUrl("/api/auth/logout"),{method:"POST"}); window.location.href="/login"; };
+  const saveSupervisor = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const payload = {
+      name: form.name,
+      position: form.position,
+      relation: form.relation,
+      tags: form.tags
+        .split(/[,，]/)
+        .map((x) => x.trim())
+        .filter(Boolean),
+      communicationPrefs: {
+        channel: form.channel,
+        speed: form.speed,
+        formal: form.formal,
+        challenge: form.challenge,
+      },
+      workStyle: {
+        decision: form.decision,
+        risk: form.risk,
+        time: form.time,
+        focus: form.focus,
+      },
+      taboos: form.taboos,
+      notes: form.notes,
+    };
+    const response = await fetch(
+      apiUrl(selected ? `/api/supervisors/${selected.id}` : "/api/supervisors"),
+      {
+        method: selected ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      },
+    );
+    if (!response.ok) {
+      setNotice((await response.json()).error ?? "保存失败");
+      return;
+    }
+    setNotice("档案已保存");
+    setShowForm(false);
+    setSelected(null);
+    setForm({
+      name: "",
+      position: "",
+      relation: "直属上级",
+      tags: "",
+      channel: "微信",
+      speed: "当天回复",
+      formal: "3",
+      challenge: "可接受",
+      decision: "民主讨论",
+      risk: "稳健",
+      time: "重视时间",
+      focus: "数据",
+      taboos: "",
+      notes: "",
+    });
+    load();
+  };
+  const saveScenario = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const response = await fetch(apiUrl("/api/scenarios"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(scenarioForm),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      setNotice(data.error ?? "场景保存失败");
+      return;
+    }
+    setScenarioForm({ name: "", description: "", referenceTemplate: "" });
+    setShowScenarioForm(false);
+    setRehearse((value) => ({ ...value, scenarioId: data.id }));
+    setNotice("自定义场景已添加");
+    load();
+  };
+  const editSupervisor = (person: Supervisor) => {
+    const prefs = safeJson(person.communicationPrefs, {}),
+      style = safeJson(person.workStyle, {});
+    setSelected(person);
+    setForm({
+      name: person.name,
+      position: person.position ?? "",
+      relation: person.relation ?? "直属上级",
+      tags: safeJson(person.tags, []).join("、"),
+      channel: prefs.channel ?? "微信",
+      speed: prefs.speed ?? "当天回复",
+      formal: prefs.formal ?? "3",
+      challenge: prefs.challenge ?? "可接受",
+      decision: style.decision ?? "民主讨论",
+      risk: style.risk ?? "稳健",
+      time: style.time ?? "重视时间",
+      focus: style.focus ?? "数据",
+      taboos: person.taboos ?? "",
+      notes: person.notes ?? "",
+    });
+    setShowForm(true);
+  };
+  const runEvaluation = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setEvaluating(true);
+    setResult(null);
+    const response = await fetch(apiUrl("/api/rehearsals/evaluate"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ...rehearse,
+        clientRequestId: crypto.randomUUID(),
+      }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      if (response.status === 402) setShowBalance(true);
+      setNotice(data.error ?? "评估失败");
+      setEvaluating(false);
+      return;
+    }
+    setResult({ record: data.record, evaluation: data.evaluation });
+    if (data.usage) setUsage(data.usage);
+    setEvaluating(false);
+    setNotice(
+      data.evaluation?.mode === "ai"
+        ? "评估完成，已扣除1次并保存"
+        : "演示评估已保存，本次未扣次数",
+    );
+    load();
+  };
+  const nav = (id: string) => {
+    setView(id);
+    if (id !== "rehearse") setResult(null);
+  };
+  const createOrder = async (packageCode: string) => {
+    if (beta.active) {
+      const response = await fetch(apiUrl("/api/beta/intents"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ packageCode, source: "pricing" }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        setNotice(data.error ?? "记录套餐意向失败");
+        return;
+      }
+      setIntent({
+        id: data.id,
+        packageName: data.packageName,
+        amountFen: data.amountFen,
+      });
+      setIntentReason("");
+      return;
+    }
+    const response = await fetch(apiUrl("/api/orders"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ packageCode }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      setNotice(data.error ?? "创建订单失败");
+      return;
+    }
+    setNotice("订单已创建，请在下方完成本地模拟支付");
+    load();
+  };
+  const payOrder = async (id: string) => {
+    const response = await fetch(apiUrl(`/api/orders/${id}/mock-pay`), {
+      method: "POST",
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      setNotice(data.error ?? "支付失败");
+      return;
+    }
+    setUsage(data.usage);
+    setNotice("模拟支付成功，次数已到账");
+    load();
+  };
+  const completeIntent = async (confirmed: boolean) => {
+    if (!intent) return;
+    const response = await fetch(apiUrl("/api/beta/intents"), {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: intent.id, confirmed, reason: intentReason }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      setNotice(data.error ?? "提交失败，请重试");
+      return;
+    }
+    setIntent(null);
+    setNotice(
+      confirmed
+        ? "购买意向已记录，本轮内测不会扣款或增加余额"
+        : "反馈已记录，感谢你告诉我们原因",
+    );
+  };
+  const logout = async () => {
+    await fetch(apiUrl("/api/auth/logout"), { method: "POST" });
+    window.location.href = "/login";
+  };
 
-  const renderHome = () => <><div className="topbar"><div><div className="eyebrow">UPWARD COMMUNICATION COACH</div><h1 className="title">把话说到对方心里。</h1><p className="subtitle">每一次关键沟通，都值得提前预演。</p></div><div className="date-pill">{new Date().toLocaleDateString("zh-CN",{month:"long",day:"numeric",weekday:"long"})}</div></div><div className="usage-banner"><div><span>今日免费</span><strong>{usage.freeRemainingToday}/{usage.dailyFreeLimit}</strong></div><div><span>付费余额</span><strong>{usage.paidRemaining} 次</strong></div><button className="action" onClick={()=>nav("rehearse")}><Sparkles size={16}/> 开始评估</button><button className="action secondary" onClick={()=>nav("pricing")}><ShoppingBag size={16}/> 购买次数</button></div><div className="grid stats"><div className="stat"><div className="stat-label">上级档案</div><div className="stat-value">{supervisors.length}</div><div className="stat-note">持续了解，精准沟通</div></div><div className="stat"><div className="stat-label">累计演练</div><div className="stat-value">{history.length}</div><div className="stat-note">每次复盘都有收获</div></div><div className="stat"><div className="stat-label">平均匹配度</div><div className="stat-value">{avgScore || "--"}{avgScore ? <small style={{fontSize:16}}>%</small>:null}</div><div className="stat-note">基于最近所有演练</div></div><div className="stat"><div className="stat-label">待复盘</div><div className="stat-value">{history.filter((h)=>!h.debrief).length}</div><div className="stat-note">让预测变得更准确</div></div></div><div className="section-head"><h2>我的上级</h2><button className="action" onClick={()=>{setSelected(null);setShowForm(true)}}><Plus size={16}/> 新建档案</button></div>{supervisors.length?<div className="grid cards">{supervisors.slice(0,3).map((p)=><PersonCard key={p.id} person={p} onClick={()=>editSupervisor(p)}/>)}</div>:<div className="empty">还没有上级档案，先创建一位你想更了解的人。</div>}<div className="section-head"><h2>最近演练</h2><button className="action secondary" onClick={()=>nav("history")}>查看全部 <ChevronRight size={16}/></button></div>{recent.length?<div className="history-list">{recent.map((item)=><HistoryCard key={item.id} item={item}/>)}</div>:<div className="empty">完成第一次沟通演练后，记录会出现在这里。</div>}</>;
-  const renderPeople = () => <><div className="topbar"><div><div className="eyebrow">PEOPLE PROFILES</div><h1 className="title">上级画像</h1><p className="subtitle">记录偏好，理解风格，把每次沟通变成加分项。</p></div><button className="action" onClick={()=>{setSelected(null);setShowForm(true)}}><Plus size={16}/> 新建档案</button></div>{supervisors.length?<div className="grid cards">{supervisors.map((p)=><PersonCard key={p.id} person={p} onClick={()=>editSupervisor(p)}/>)}</div>:<div className="empty">还没有档案，点击右上角开始建立你的沟通地图。</div>}</>;
-  const renderRehearse = () => <><div className="topbar"><div><div className="eyebrow">REHEARSAL STUDIO</div><h1 className="title">沟通演练</h1><p className="subtitle">先在这里试一次，再走进真实对话。</p></div></div>{!supervisors.length?<div className="empty">请先创建一位上级档案，再开始演练。</div>:<div className="rehearse-layout"><form className="panel" onSubmit={runEvaluation}><div className="form-grid"><div className="field"><label>沟通对象</label><select value={rehearse.supervisorId} onChange={(e)=>setRehearse({...rehearse,supervisorId:e.target.value})}>{supervisors.map((p)=><option key={p.id} value={p.id}>{p.name}{p.position?` · ${p.position}`:""}</option>)}</select></div><div className="field"><label>沟通场景</label><div style={{display:"flex",gap:8}}><select style={{flex:1}} value={rehearse.scenarioId} onChange={(e)=>setRehearse({...rehearse,scenarioId:e.target.value})}>{scenarios.map((s)=><option key={s.id} value={s.id}>{s.name}</option>)}</select><button type="button" className="action secondary" title="新增场景" onClick={()=>setShowScenarioForm(true)}><Plus size={16}/></button></div></div><div className="field full"><label>你准备怎么说？</label><textarea required maxLength={10000} value={rehearse.inputText} onChange={(e)=>setRehearse({...rehearse,inputText:e.target.value})} placeholder="可以写完整话术，也可以先列出要点……"/><span style={{fontSize:11,color:"var(--muted)",textAlign:"right"}}>{rehearse.inputText.length}/10000</span></div><div className="field full"><label>行动计划 <span style={{fontWeight:400,color:"var(--muted)"}}>（可选）</span></label><textarea value={rehearse.actionPlan} onChange={(e)=>setRehearse({...rehearse,actionPlan:e.target.value})} placeholder="沟通后你会做什么？何时同步？如何闭环？"/></div></div><div className="form-actions"><button className="action" disabled={evaluating}>{evaluating?<><BrainCircuit size={16}/> 正在分析…</>:<><Sparkles size={16}/> 开始评估</>}</button></div></form><div className="panel"><div className="eyebrow">BASIC REQUIREMENTS</div><h2 style={{fontSize:18,margin:"8px 0"}}>汇报基本要求</h2><p style={{fontSize:13,color:"var(--muted)",lineHeight:1.7,margin:"0 0 14px"}}>每次演练都按这套管理原则校准：先给判断，再推动决策和行动。</p><div style={{display:"flex",flexDirection:"column",gap:9}}>{baselineRequirements.map((requirement,index)=><div key={requirement} style={{display:"flex",gap:9,fontSize:12,lineHeight:1.45}}><span style={{width:20,height:20,flex:"0 0 20px",borderRadius:"50%",background:"var(--mint)",color:"var(--green)",display:"grid",placeItems:"center",fontWeight:700}}>{index+1}</span><span>{requirement}</span></div>)}</div><div style={{marginTop:18,paddingTop:16,borderTop:"1px solid var(--line)"}}><div style={{fontSize:12,color:"var(--muted)"}}>当前模式</div><div style={{marginTop:8,fontSize:13}}><span className="status-dot"/>联网后使用真实模型；未配置时自动使用演示模式</div></div></div></div>}{result&&<EvaluationPanel result={result} onDebrief={()=>nav("history")}/>}</>;
-  const renderHistory = () => <><div className="topbar"><div><div className="eyebrow">REFLECTION LOG</div><h1 className="title">历史复盘</h1><p className="subtitle">看见变化，也看见下一次可以做得更好的地方。</p></div><button className="action" onClick={()=>nav("rehearse")}><Sparkles size={16}/> 新建演练</button></div>{history.length?<div className="history-list">{history.map((item)=><HistoryCard key={item.id} item={item} detailed/>)}</div>:<div className="empty">完成第一次沟通演练后，这里会成为你的成长记录。</div>}</>;
-  const renderPricing = () => <><div className="topbar"><div><div className="eyebrow">CREDIT PACKAGES</div><h1 className="title">按需购买，用多少付多少。</h1><p className="subtitle">付费次数永久有效，每次真实 AI 评估成功后扣除 1 次。</p></div><div className="balance-pill">可用 {usage.totalRemaining} 次</div></div><div className="pricing-grid">{packages.map((item)=><div className={`price-card ${item.code==="regular-100"?"featured":""}`} key={item.code}><h2>{item.name}</h2><div className="price">¥{(item.priceFen/100).toFixed(item.priceFen%100?2:0)}</div><strong>{item.code==="free"?"每日3次":`${item.credits}次`}</strong><div style={{flex:1}}/>{item.priceFen>0?<button className="action" onClick={()=>createOrder(item.code)}><ShoppingBag size={16}/> 创建订单</button>:<span className="free-note">每日自动刷新</span>}</div>)}</div><div className="section-head"><h2>我的订单</h2><span className="dev-badge">本地模拟支付</span></div>{orders.length?<div className="history-list">{orders.map((order)=><div className="history-card" key={order.id}><div className="history-main"><h3>{order.packageName} · {order.credits}次</h3><p>¥{(order.amountFen/100).toFixed(2)} · {new Date(order.createdAt).toLocaleString("zh-CN")}</p></div><div style={{display:"flex",alignItems:"center",gap:10}}><span className="mode-badge">{order.status}</span>{order.status==="CREATED"&&<button className="action" onClick={()=>payOrder(order.id)}>模拟支付</button>}</div></div>)}</div>:<div className="empty">还没有订单，选择一个套餐开始。</div>}</>;  const renderSettings = () => <><div className="topbar"><div><div className="eyebrow">WORKSPACE SETTINGS</div><h1 className="title">设置</h1><p className="subtitle">让工具更贴合你的工作节奏。</p></div></div><div className="panel"><div className="setting-row"><div className="setting-label"><strong>AI 评估服务</strong><span>服务端安全连接 AI 服务</span></div><div><span className={`status-dot ${aiStatus.configured?"on":""}`}/>{aiStatus.configured?`${aiStatus.provider} · ${aiStatus.model}`:"演示模式"}</div></div><div style={{background:"#f8faf7",border:"1px solid var(--line)",borderRadius:9,padding:16,margin:"16px 0",fontSize:13,lineHeight:1.7}}><strong>DeepSeek 已接入</strong><div style={{color:"var(--muted)",marginTop:6}}>AI 服务在本地服务端配置，密钥不会进入浏览器。</div><div style={{color:"var(--muted)",marginTop:8}}>密钥不会进入浏览器或保存到沟通记录中。</div></div><div className="setting-row"><div className="setting-label"><strong>安装到手机</strong><span>在浏览器菜单中选择“添加到主屏幕”即可像 App 一样使用</span></div><button className="action secondary" onClick={()=>setNotice("请打开浏览器菜单，选择“添加到主屏幕”")}>查看方式</button></div><div className="setting-row"><div className="setting-label"><strong>数据存储</strong><span>数据保存在本地 SQLite，所有记录按当前账号隔离</span></div><span style={{fontSize:13,color:"var(--green)"}}>已启用</span></div><div className="setting-row"><div className="setting-label"><strong>当前账号</strong><span>{user?.nickname} · {user?.phone}</span></div><button className="action secondary" onClick={logout}><LogOut size={16}/> 退出登录</button></div></div></>;
- return <div className="app-shell"><aside className="sidebar"><div className="brand"><div className="brand-mark">知</div>知彼</div><nav className="nav">{navItems.map(({id,label,icon:Icon})=><button key={id} className={view===id?"active":""} onClick={()=>nav(id)}><Icon size={17}/>{label}</button>)}</nav><div className="sidebar-footer">向上沟通教练<br/>让每一次表达更有分量。</div></aside><main className="main">{notice&&<div style={{background:"#edf8f1",border:"1px solid #c5e7d2",color:"#257c63",padding:"10px 13px",borderRadius:8,marginBottom:18,fontSize:13,display:"flex",justifyContent:"space-between"}}>{notice}<button onClick={()=>setNotice("")} style={{border:0,background:"transparent",color:"inherit"}}><X size={14}/></button></div>}{loading?<div className="empty">正在整理你的沟通工作台…</div>:view==="home"?renderHome():view==="people"?renderPeople():view==="rehearse"?renderRehearse():view==="history"?renderHistory():view==="pricing"?renderPricing():renderSettings()}</main><nav className="mobile-nav">{navItems.filter((item)=>["home","rehearse","history","pricing"].includes(item.id)).map(({id,label,icon:Icon})=><button key={id} className={view===id?"active":""} onClick={()=>nav(id)}><Icon size={18}/>{label}</button>)}</nav>{showForm&&<div style={{position:"fixed",inset:0,zIndex:20,background:"#12211f66",display:"grid",placeItems:"center",padding:16}}><form className="panel" style={{width:"min(680px,100%)",maxHeight:"90vh",overflow:"auto"}} onSubmit={saveSupervisor}><div className="section-head" style={{marginTop:0}}><h2>{selected?"编辑上级档案":"新建上级档案"}</h2><button type="button" onClick={()=>setShowForm(false)} style={{border:0,background:"transparent",color:"var(--muted)"}}><X size={20}/></button></div><div className="form-grid"><div className="field"><label>姓名 *</label><input required value={form.name} onChange={(e)=>setForm({...form,name:e.target.value})} placeholder="例如：林总"/></div><div className="field"><label>职位</label><input value={form.position} onChange={(e)=>setForm({...form,position:e.target.value})} placeholder="例如：市场负责人"/></div><div className="field"><label>关系</label><select value={form.relation} onChange={(e)=>setForm({...form,relation:e.target.value})}><option>直属上级</option><option>部门领导</option><option>甲方 PM</option><option>合作伙伴</option></select></div><div className="field"><label>性格标签</label><input value={form.tags} onChange={(e)=>setForm({...form,tags:e.target.value})} placeholder="雷厉风行、结果导向"/></div><div className="field"><label>偏好渠道</label><select value={form.channel} onChange={(e)=>setForm({...form,channel:e.target.value})}><option>微信</option><option>邮件</option><option>当面</option><option>电话</option></select></div><div className="field"><label>回复速度期望</label><select value={form.speed} onChange={(e)=>setForm({...form,speed:e.target.value})}><option>即时回复</option><option>当天回复</option><option>一到两天</option><option>不固定</option></select></div><div className="field"><label>语气正式度（1-5）</label><div className="range-row"><input type="range" min="1" max="5" value={form.formal} onChange={(e)=>setForm({...form,formal:e.target.value})}/><span className="range-value">{form.formal}</span></div></div><div className="field"><label>接受挑战性意见</label><select value={form.challenge} onChange={(e)=>setForm({...form,challenge:e.target.value})}><option>很接受</option><option>可接受</option><option>谨慎接受</option><option>不太接受</option></select></div><div className="field"><label>决策模式</label><select value={form.decision} onChange={(e)=>setForm({...form,decision:e.target.value})}><option>独断决策</option><option>民主讨论</option><option>数据驱动</option><option>视情况而定</option></select></div><div className="field"><label>风险偏好</label><select value={form.risk} onChange={(e)=>setForm({...form,risk:e.target.value})}><option>稳健</option><option>平衡</option><option>激进</option></select></div><div className="field"><label>时间观念</label><select value={form.time} onChange={(e)=>setForm({...form,time:e.target.value})}><option>重视时间</option><option>弹性安排</option><option>以结果为准</option></select></div><div className="field"><label>最重视的表达</label><select value={form.focus} onChange={(e)=>setForm({...form,focus:e.target.value})}><option>数据</option><option>故事</option><option>逻辑</option><option>综合</option></select></div><div className="field full"><label>忌讳话题</label><textarea value={form.taboos} onChange={(e)=>setForm({...form,taboos:e.target.value})} placeholder="例如：未经验证的承诺、临时甩锅"/></div><div className="field full"><label>历史互动备注</label><textarea value={form.notes} onChange={(e)=>setForm({...form,notes:e.target.value})} placeholder="记录一次成功或失败的沟通经验……"/></div></div><div className="form-actions"><button type="button" className="action secondary" onClick={()=>setShowForm(false)}>取消</button><button className="action"><ClipboardCheck size={16}/> 保存档案</button></div></form></div>}{showBalance&&<div className="modal-backdrop"><div className="panel balance-modal"><button className="modal-close" onClick={()=>setShowBalance(false)}><X size={20}/></button><WalletCards size={30}/><h2>本次可用次数不足</h2><p>今日免费次数已用完，付费余额为 {usage.paidRemaining} 次。</p><div className="form-actions"><button className="action secondary" onClick={()=>setShowBalance(false)}>稍后再说</button><button className="action" onClick={()=>{setShowBalance(false);nav("pricing")}}>购买次数</button></div></div></div>}{showScenarioForm&&<div style={{position:"fixed",inset:0,zIndex:20,background:"#12211f66",display:"grid",placeItems:"center",padding:16}}><form className="panel" style={{width:"min(520px,100%)"}} onSubmit={saveScenario}><div className="section-head" style={{marginTop:0}}><h2>新增沟通场景</h2><button type="button" onClick={()=>setShowScenarioForm(false)} style={{border:0,background:"transparent",color:"var(--muted)"}}><X size={20}/></button></div><div className="form-grid"><div className="field full"><label>场景名称 *</label><input required value={scenarioForm.name} onChange={(e)=>setScenarioForm({...scenarioForm,name:e.target.value})} placeholder="例如：向领导汇报客户投诉"/></div><div className="field full"><label>场景说明</label><textarea value={scenarioForm.description} onChange={(e)=>setScenarioForm({...scenarioForm,description:e.target.value})} placeholder="说明这类沟通的背景、目标和注意事项"/></div><div className="field full"><label>参考模板（选填）</label><textarea value={scenarioForm.referenceTemplate} onChange={(e)=>setScenarioForm({...scenarioForm,referenceTemplate:e.target.value})} placeholder="粘贴参考话术、固定结构或希望 AI 借鉴的表达方式"/></div></div><div className="form-actions"><button type="button" className="action secondary" onClick={()=>setShowScenarioForm(false)}>取消</button><button className="action"><ClipboardCheck size={16}/> 保存场景</button></div></form></div>}</div>;
+  const renderHome = () => (
+    <>
+      <div className="topbar">
+        <div>
+          <div className="eyebrow">UPWARD COMMUNICATION COACH</div>
+          <h1 className="title">把话说到对方心里。</h1>
+          <p className="subtitle">每一次关键沟通，都值得提前预演。</p>
+        </div>
+        <div className="date-pill">
+          {new Date().toLocaleDateString("zh-CN", {
+            month: "long",
+            day: "numeric",
+            weekday: "long",
+          })}
+        </div>
+      </div>
+      <div className="usage-banner">
+        <div>
+          <span>今日免费</span>
+          <strong>
+            {usage.freeRemainingToday}/{usage.dailyFreeLimit}
+          </strong>
+        </div>
+        {beta.active && (
+          <div>
+            <span>内测权益</span>
+            <strong>{usage.betaRemaining} 次</strong>
+          </div>
+        )}
+        <div>
+          <span>{beta.active ? "正式付费" : "付费余额"}</span>
+          <strong>{usage.paidRemaining} 次</strong>
+        </div>
+        <button className="action" onClick={() => nav("rehearse")}>
+          <Sparkles size={16} /> 开始评估
+        </button>
+        <button className="action secondary" onClick={() => nav("pricing")}>
+          <ShoppingBag size={16} /> 购买次数
+        </button>
+      </div>
+      <div className="grid stats">
+        <div className="stat">
+          <div className="stat-label">上级档案</div>
+          <div className="stat-value">{supervisors.length}</div>
+          <div className="stat-note">持续了解，精准沟通</div>
+        </div>
+        <div className="stat">
+          <div className="stat-label">累计演练</div>
+          <div className="stat-value">{history.length}</div>
+          <div className="stat-note">每次复盘都有收获</div>
+        </div>
+        <div className="stat">
+          <div className="stat-label">平均匹配度</div>
+          <div className="stat-value">
+            {avgScore || "--"}
+            {avgScore ? <small style={{ fontSize: 16 }}>%</small> : null}
+          </div>
+          <div className="stat-note">基于最近所有演练</div>
+        </div>
+        <div className="stat">
+          <div className="stat-label">待复盘</div>
+          <div className="stat-value">
+            {history.filter((h) => !h.debrief).length}
+          </div>
+          <div className="stat-note">让预测变得更准确</div>
+        </div>
+      </div>
+      <div className="section-head">
+        <h2>我的上级</h2>
+        <button
+          className="action"
+          onClick={() => {
+            setSelected(null);
+            setShowForm(true);
+          }}
+        >
+          <Plus size={16} /> 新建档案
+        </button>
+      </div>
+      {supervisors.length ? (
+        <div className="grid cards">
+          {supervisors.slice(0, 3).map((p) => (
+            <PersonCard
+              key={p.id}
+              person={p}
+              onClick={() => editSupervisor(p)}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="empty">还没有上级档案，先创建一位你想更了解的人。</div>
+      )}
+      <div className="section-head">
+        <h2>最近演练</h2>
+        <button className="action secondary" onClick={() => nav("history")}>
+          查看全部 <ChevronRight size={16} />
+        </button>
+      </div>
+      {recent.length ? (
+        <div className="history-list">
+          {recent.map((item) => (
+            <HistoryCard key={item.id} item={item} beta={beta.active} />
+          ))}
+        </div>
+      ) : (
+        <div className="empty">完成第一次沟通演练后，记录会出现在这里。</div>
+      )}
+    </>
+  );
+  const renderPeople = () => (
+    <>
+      <div className="topbar">
+        <div>
+          <div className="eyebrow">PEOPLE PROFILES</div>
+          <h1 className="title">上级画像</h1>
+          <p className="subtitle">记录偏好，理解风格，把每次沟通变成加分项。</p>
+        </div>
+        <button
+          className="action"
+          onClick={() => {
+            setSelected(null);
+            setShowForm(true);
+          }}
+        >
+          <Plus size={16} /> 新建档案
+        </button>
+      </div>
+      {supervisors.length ? (
+        <div className="grid cards">
+          {supervisors.map((p) => (
+            <PersonCard
+              key={p.id}
+              person={p}
+              onClick={() => editSupervisor(p)}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="empty">
+          还没有档案，点击右上角开始建立你的沟通地图。
+        </div>
+      )}
+    </>
+  );
+  const renderRehearse = () => (
+    <>
+      <div className="topbar">
+        <div>
+          <div className="eyebrow">REHEARSAL STUDIO</div>
+          <h1 className="title">沟通演练</h1>
+          <p className="subtitle">先在这里试一次，再走进真实对话。</p>
+        </div>
+      </div>
+      {!supervisors.length ? (
+        <div className="empty">请先创建一位上级档案，再开始演练。</div>
+      ) : (
+        <div className="rehearse-layout">
+          <form className="panel" onSubmit={runEvaluation}>
+            <div className="form-grid">
+              <div className="field">
+                <label>沟通对象</label>
+                <select
+                  value={rehearse.supervisorId}
+                  onChange={(e) =>
+                    setRehearse({ ...rehearse, supervisorId: e.target.value })
+                  }
+                >
+                  {supervisors.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                      {p.position ? ` · ${p.position}` : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="field">
+                <label>沟通场景</label>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <select
+                    style={{ flex: 1 }}
+                    value={rehearse.scenarioId}
+                    onChange={(e) =>
+                      setRehearse({ ...rehearse, scenarioId: e.target.value })
+                    }
+                  >
+                    {scenarios.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    className="action secondary"
+                    title="新增场景"
+                    onClick={() => setShowScenarioForm(true)}
+                  >
+                    <Plus size={16} />
+                  </button>
+                </div>
+              </div>
+              <div className="field full">
+                <label>你准备怎么说？</label>
+                <textarea
+                  required
+                  maxLength={10000}
+                  value={rehearse.inputText}
+                  onChange={(e) =>
+                    setRehearse({ ...rehearse, inputText: e.target.value })
+                  }
+                  placeholder="可以写完整话术，也可以先列出要点……"
+                />
+                <span
+                  style={{
+                    fontSize: 11,
+                    color: "var(--muted)",
+                    textAlign: "right",
+                  }}
+                >
+                  {rehearse.inputText.length}/10000
+                </span>
+              </div>
+              <div className="field full">
+                <label>
+                  行动计划{" "}
+                  <span style={{ fontWeight: 400, color: "var(--muted)" }}>
+                    （可选）
+                  </span>
+                </label>
+                <textarea
+                  value={rehearse.actionPlan}
+                  onChange={(e) =>
+                    setRehearse({ ...rehearse, actionPlan: e.target.value })
+                  }
+                  placeholder="沟通后你会做什么？何时同步？如何闭环？"
+                />
+              </div>
+            </div>
+            <div className="form-actions">
+              <button className="action" disabled={evaluating}>
+                {evaluating ? (
+                  <>
+                    <BrainCircuit size={16} /> 正在分析…
+                  </>
+                ) : (
+                  <>
+                    <Sparkles size={16} /> 开始评估
+                  </>
+                )}
+              </button>
+            </div>
+          </form>
+          <div className="panel">
+            <div className="eyebrow">BASIC REQUIREMENTS</div>
+            <h2 style={{ fontSize: 18, margin: "8px 0" }}>汇报基本要求</h2>
+            <p
+              style={{
+                fontSize: 13,
+                color: "var(--muted)",
+                lineHeight: 1.7,
+                margin: "0 0 14px",
+              }}
+            >
+              每次演练都按这套管理原则校准：先给判断，再推动决策和行动。
+            </p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+              {baselineRequirements.map((requirement, index) => (
+                <div
+                  key={requirement}
+                  style={{
+                    display: "flex",
+                    gap: 9,
+                    fontSize: 12,
+                    lineHeight: 1.45,
+                  }}
+                >
+                  <span
+                    style={{
+                      width: 20,
+                      height: 20,
+                      flex: "0 0 20px",
+                      borderRadius: "50%",
+                      background: "var(--mint)",
+                      color: "var(--green)",
+                      display: "grid",
+                      placeItems: "center",
+                      fontWeight: 700,
+                    }}
+                  >
+                    {index + 1}
+                  </span>
+                  <span>{requirement}</span>
+                </div>
+              ))}
+            </div>
+            <div
+              style={{
+                marginTop: 18,
+                paddingTop: 16,
+                borderTop: "1px solid var(--line)",
+              }}
+            >
+              <div style={{ fontSize: 12, color: "var(--muted)" }}>
+                当前模式
+              </div>
+              <div style={{ marginTop: 8, fontSize: 13 }}>
+                <span className="status-dot" />
+                联网后使用真实模型；未配置时自动使用演示模式
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {result && (
+        <EvaluationPanel
+          result={result}
+          beta={beta.active}
+          onDebrief={() => nav("history")}
+        />
+      )}
+    </>
+  );
+  const renderHistory = () => (
+    <>
+      <div className="topbar">
+        <div>
+          <div className="eyebrow">REFLECTION LOG</div>
+          <h1 className="title">历史复盘</h1>
+          <p className="subtitle">看见变化，也看见下一次可以做得更好的地方。</p>
+        </div>
+        <button className="action" onClick={() => nav("rehearse")}>
+          <Sparkles size={16} /> 新建演练
+        </button>
+      </div>
+      {history.length ? (
+        <div className="history-list">
+          {history.map((item) => (
+            <HistoryCard
+              key={item.id}
+              item={item}
+              detailed
+              beta={beta.active}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="empty">
+          完成第一次沟通演练后，这里会成为你的成长记录。
+        </div>
+      )}
+    </>
+  );
+  const renderPricing = () => (
+    <>
+      <div className="topbar">
+        <div>
+          <div className="eyebrow">CREDIT PACKAGES</div>
+          <h1 className="title">按需购买，用多少付多少。</h1>
+          <p className="subtitle">
+            付费次数永久有效，每次真实 AI 评估成功后扣除 1 次。
+          </p>
+        </div>
+        <div className="balance-pill">可用 {usage.totalRemaining} 次</div>
+      </div>
+      <div className="pricing-grid">
+        {packages.map((item) => (
+          <div
+            className={`price-card ${item.code === "regular-100" ? "featured" : ""}`}
+            key={item.code}
+          >
+            <h2>{item.name}</h2>
+            <div className="price">
+              ¥{(item.priceFen / 100).toFixed(item.priceFen % 100 ? 2 : 0)}
+            </div>
+            <strong>
+              {item.code === "free" ? "每日3次" : `${item.credits}次`}
+            </strong>
+            <div style={{ flex: 1 }} />
+            {item.priceFen > 0 ? (
+              <button className="action" onClick={() => createOrder(item.code)}>
+                <ShoppingBag size={16} />{" "}
+                {beta.active ? "我会考虑购买" : "创建订单"}
+              </button>
+            ) : (
+              <span className="free-note">每日自动刷新</span>
+            )}
+          </div>
+        ))}
+      </div>
+      {beta.active && (
+        <div className="beta-pricing-note">
+          本轮仅记录购买意向，不会发起支付、扣款或增加次数。你的选择只用于验证套餐价格。
+        </div>
+      )}
+      {!beta.active && (
+        <>
+          <div className="section-head">
+            <h2>我的订单</h2>
+            <span className="dev-badge">本地模拟支付</span>
+          </div>
+          {orders.length ? (
+            <div className="history-list">
+              {orders.map((order) => (
+                <div className="history-card" key={order.id}>
+                  <div className="history-main">
+                    <h3>
+                      {order.packageName} · {order.credits}次
+                    </h3>
+                    <p>
+                      ¥{(order.amountFen / 100).toFixed(2)} ·{" "}
+                      {new Date(order.createdAt).toLocaleString("zh-CN")}
+                    </p>
+                  </div>
+                  <div
+                    style={{ display: "flex", alignItems: "center", gap: 10 }}
+                  >
+                    <span className="mode-badge">{order.status}</span>
+                    {order.status === "CREATED" && (
+                      <button
+                        className="action"
+                        onClick={() => payOrder(order.id)}
+                      >
+                        模拟支付
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="empty">还没有订单，选择一个套餐开始。</div>
+          )}
+        </>
+      )}
+    </>
+  );
+  const renderSettings = () => (
+    <>
+      <div className="topbar">
+        <div>
+          <div className="eyebrow">WORKSPACE SETTINGS</div>
+          <h1 className="title">设置</h1>
+          <p className="subtitle">让工具更贴合你的工作节奏。</p>
+        </div>
+      </div>
+      <div className="panel">
+        <div className="setting-row">
+          <div className="setting-label">
+            <strong>AI 评估服务</strong>
+            <span>服务端安全连接 AI 服务</span>
+          </div>
+          <div>
+            <span className={`status-dot ${aiStatus.configured ? "on" : ""}`} />
+            {aiStatus.configured
+              ? `${aiStatus.provider} · ${aiStatus.model}`
+              : "演示模式"}
+          </div>
+        </div>
+        <div
+          style={{
+            background: "#f8faf7",
+            border: "1px solid var(--line)",
+            borderRadius: 9,
+            padding: 16,
+            margin: "16px 0",
+            fontSize: 13,
+            lineHeight: 1.7,
+          }}
+        >
+          <strong>DeepSeek 已接入</strong>
+          <div style={{ color: "var(--muted)", marginTop: 6 }}>
+            AI 服务仅在服务端配置，密钥不会进入浏览器。
+          </div>
+          <div style={{ color: "var(--muted)", marginTop: 8 }}>
+            密钥不会进入浏览器或保存到沟通记录中。
+          </div>
+        </div>
+        <div className="setting-row">
+          <div className="setting-label">
+            <strong>安装到手机</strong>
+            <span>在浏览器菜单中选择“添加到主屏幕”即可像 App 一样使用</span>
+          </div>
+          <button
+            className="action secondary"
+            onClick={() => setNotice("请打开浏览器菜单，选择“添加到主屏幕”")}
+          >
+            查看方式
+          </button>
+        </div>
+        <div className="setting-row">
+          <div className="setting-label">
+            <strong>数据存储</strong>
+            <span>
+              {beta.active
+                ? "数据保存在独立内测数据库，所有记录按账号隔离"
+                : "数据保存在本地 SQLite，所有记录按当前账号隔离"}
+            </span>
+          </div>
+          <span style={{ fontSize: 13, color: "var(--green)" }}>已启用</span>
+        </div>
+        <div className="setting-row">
+          <div className="setting-label">
+            <strong>当前账号</strong>
+            <span>
+              {user?.nickname} · {user?.phone}
+            </span>
+          </div>
+          <button className="action secondary" onClick={logout}>
+            <LogOut size={16} /> 退出登录
+          </button>
+        </div>
+      </div>
+    </>
+  );
+  return (
+    <div className="app-shell">
+      <aside className="sidebar">
+        <div className="brand">
+          <div className="brand-mark">知</div>知彼
+        </div>
+        <nav className="nav">
+          {navItems.map(({ id, label, icon: Icon }) => (
+            <button
+              key={id}
+              className={view === id ? "active" : ""}
+              onClick={() => nav(id)}
+            >
+              <Icon size={17} />
+              {label}
+            </button>
+          ))}
+        </nav>
+        <div className="sidebar-footer">
+          向上沟通教练
+          <br />
+          让每一次表达更有分量。
+        </div>
+      </aside>
+      <main className="main">
+        {notice && (
+          <div
+            style={{
+              background: "#edf8f1",
+              border: "1px solid #c5e7d2",
+              color: "#257c63",
+              padding: "10px 13px",
+              borderRadius: 8,
+              marginBottom: 18,
+              fontSize: 13,
+              display: "flex",
+              justifyContent: "space-between",
+            }}
+          >
+            {notice}
+            <button
+              onClick={() => setNotice("")}
+              style={{ border: 0, background: "transparent", color: "inherit" }}
+            >
+              <X size={14} />
+            </button>
+          </div>
+        )}
+        {loading ? (
+          <div className="empty">正在整理你的沟通工作台…</div>
+        ) : view === "home" ? (
+          renderHome()
+        ) : view === "people" ? (
+          renderPeople()
+        ) : view === "rehearse" ? (
+          renderRehearse()
+        ) : view === "history" ? (
+          renderHistory()
+        ) : view === "pricing" ? (
+          renderPricing()
+        ) : (
+          renderSettings()
+        )}
+      </main>
+      <nav className="mobile-nav">
+        {navItems
+          .filter((item) =>
+            ["home", "rehearse", "history", "pricing"].includes(item.id),
+          )
+          .map(({ id, label, icon: Icon }) => (
+            <button
+              key={id}
+              className={view === id ? "active" : ""}
+              onClick={() => nav(id)}
+            >
+              <Icon size={18} />
+              {label}
+            </button>
+          ))}
+      </nav>
+      {showForm && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 20,
+            background: "#12211f66",
+            display: "grid",
+            placeItems: "center",
+            padding: 16,
+          }}
+        >
+          <form
+            className="panel"
+            style={{
+              width: "min(680px,100%)",
+              maxHeight: "90vh",
+              overflow: "auto",
+            }}
+            onSubmit={saveSupervisor}
+          >
+            <div className="section-head" style={{ marginTop: 0 }}>
+              <h2>{selected ? "编辑上级档案" : "新建上级档案"}</h2>
+              <button
+                type="button"
+                onClick={() => setShowForm(false)}
+                style={{
+                  border: 0,
+                  background: "transparent",
+                  color: "var(--muted)",
+                }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <div className="form-grid">
+              <div className="field">
+                <label>姓名 *</label>
+                <input
+                  required
+                  value={form.name}
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  placeholder="例如：林总"
+                />
+              </div>
+              <div className="field">
+                <label>职位</label>
+                <input
+                  value={form.position}
+                  onChange={(e) =>
+                    setForm({ ...form, position: e.target.value })
+                  }
+                  placeholder="例如：市场负责人"
+                />
+              </div>
+              <div className="field">
+                <label>关系</label>
+                <select
+                  value={form.relation}
+                  onChange={(e) =>
+                    setForm({ ...form, relation: e.target.value })
+                  }
+                >
+                  <option>直属上级</option>
+                  <option>部门领导</option>
+                  <option>甲方 PM</option>
+                  <option>合作伙伴</option>
+                </select>
+              </div>
+              <div className="field">
+                <label>性格标签</label>
+                <input
+                  value={form.tags}
+                  onChange={(e) => setForm({ ...form, tags: e.target.value })}
+                  placeholder="雷厉风行、结果导向"
+                />
+              </div>
+              <div className="field">
+                <label>偏好渠道</label>
+                <select
+                  value={form.channel}
+                  onChange={(e) =>
+                    setForm({ ...form, channel: e.target.value })
+                  }
+                >
+                  <option>微信</option>
+                  <option>邮件</option>
+                  <option>当面</option>
+                  <option>电话</option>
+                </select>
+              </div>
+              <div className="field">
+                <label>回复速度期望</label>
+                <select
+                  value={form.speed}
+                  onChange={(e) => setForm({ ...form, speed: e.target.value })}
+                >
+                  <option>即时回复</option>
+                  <option>当天回复</option>
+                  <option>一到两天</option>
+                  <option>不固定</option>
+                </select>
+              </div>
+              <div className="field">
+                <label>语气正式度（1-5）</label>
+                <div className="range-row">
+                  <input
+                    type="range"
+                    min="1"
+                    max="5"
+                    value={form.formal}
+                    onChange={(e) =>
+                      setForm({ ...form, formal: e.target.value })
+                    }
+                  />
+                  <span className="range-value">{form.formal}</span>
+                </div>
+              </div>
+              <div className="field">
+                <label>接受挑战性意见</label>
+                <select
+                  value={form.challenge}
+                  onChange={(e) =>
+                    setForm({ ...form, challenge: e.target.value })
+                  }
+                >
+                  <option>很接受</option>
+                  <option>可接受</option>
+                  <option>谨慎接受</option>
+                  <option>不太接受</option>
+                </select>
+              </div>
+              <div className="field">
+                <label>决策模式</label>
+                <select
+                  value={form.decision}
+                  onChange={(e) =>
+                    setForm({ ...form, decision: e.target.value })
+                  }
+                >
+                  <option>独断决策</option>
+                  <option>民主讨论</option>
+                  <option>数据驱动</option>
+                  <option>视情况而定</option>
+                </select>
+              </div>
+              <div className="field">
+                <label>风险偏好</label>
+                <select
+                  value={form.risk}
+                  onChange={(e) => setForm({ ...form, risk: e.target.value })}
+                >
+                  <option>稳健</option>
+                  <option>平衡</option>
+                  <option>激进</option>
+                </select>
+              </div>
+              <div className="field">
+                <label>时间观念</label>
+                <select
+                  value={form.time}
+                  onChange={(e) => setForm({ ...form, time: e.target.value })}
+                >
+                  <option>重视时间</option>
+                  <option>弹性安排</option>
+                  <option>以结果为准</option>
+                </select>
+              </div>
+              <div className="field">
+                <label>最重视的表达</label>
+                <select
+                  value={form.focus}
+                  onChange={(e) => setForm({ ...form, focus: e.target.value })}
+                >
+                  <option>数据</option>
+                  <option>故事</option>
+                  <option>逻辑</option>
+                  <option>综合</option>
+                </select>
+              </div>
+              <div className="field full">
+                <label>忌讳话题</label>
+                <textarea
+                  value={form.taboos}
+                  onChange={(e) => setForm({ ...form, taboos: e.target.value })}
+                  placeholder="例如：未经验证的承诺、临时甩锅"
+                />
+              </div>
+              <div className="field full">
+                <label>历史互动备注</label>
+                <textarea
+                  value={form.notes}
+                  onChange={(e) => setForm({ ...form, notes: e.target.value })}
+                  placeholder="记录一次成功或失败的沟通经验……"
+                />
+              </div>
+            </div>
+            <div className="form-actions">
+              <button
+                type="button"
+                className="action secondary"
+                onClick={() => setShowForm(false)}
+              >
+                取消
+              </button>
+              <button className="action">
+                <ClipboardCheck size={16} /> 保存档案
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+      {showBalance && (
+        <div className="modal-backdrop">
+          <div className="panel balance-modal">
+            <button
+              className="modal-close"
+              onClick={() => setShowBalance(false)}
+            >
+              <X size={20} />
+            </button>
+            <WalletCards size={30} />
+            <h2>本次可用次数不足</h2>
+            <p>今日免费、内测赠送与付费次数均已用完。本轮不会自动发起支付。</p>
+            <div className="form-actions">
+              <button
+                className="action secondary"
+                onClick={() => setShowBalance(false)}
+              >
+                稍后再说
+              </button>
+              <button
+                className="action"
+                onClick={() => {
+                  setShowBalance(false);
+                  nav("pricing");
+                }}
+              >
+                购买次数
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {intent && (
+        <div className="modal-backdrop">
+          <div className="panel balance-modal beta-intent-modal">
+            <button
+              className="modal-close"
+              onClick={() => void completeIntent(false)}
+            >
+              <X size={20} />
+            </button>
+            <ShoppingBag size={30} />
+            <h2>你会考虑购买“{intent.packageName}”吗？</h2>
+            <p>
+              价格为 ¥
+              {(intent.amountFen / 100).toFixed(intent.amountFen % 100 ? 2 : 0)}
+              。本轮只记录意向，不会产生支付。
+            </p>
+            <div className="field">
+              <label>影响你选择的原因（选填）</label>
+              <textarea
+                value={intentReason}
+                onChange={(event) => setIntentReason(event.target.value)}
+                placeholder="例如：价格合适、次数太多、希望先继续体验"
+              />
+            </div>
+            <div className="form-actions">
+              <button
+                className="action secondary"
+                onClick={() => void completeIntent(false)}
+              >
+                暂不购买
+              </button>
+              <button
+                className="action"
+                onClick={() => void completeIntent(true)}
+              >
+                这个价格我愿意购买
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {showScenarioForm && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 20,
+            background: "#12211f66",
+            display: "grid",
+            placeItems: "center",
+            padding: 16,
+          }}
+        >
+          <form
+            className="panel"
+            style={{ width: "min(520px,100%)" }}
+            onSubmit={saveScenario}
+          >
+            <div className="section-head" style={{ marginTop: 0 }}>
+              <h2>新增沟通场景</h2>
+              <button
+                type="button"
+                onClick={() => setShowScenarioForm(false)}
+                style={{
+                  border: 0,
+                  background: "transparent",
+                  color: "var(--muted)",
+                }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <div className="form-grid">
+              <div className="field full">
+                <label>场景名称 *</label>
+                <input
+                  required
+                  value={scenarioForm.name}
+                  onChange={(e) =>
+                    setScenarioForm({ ...scenarioForm, name: e.target.value })
+                  }
+                  placeholder="例如：向领导汇报客户投诉"
+                />
+              </div>
+              <div className="field full">
+                <label>场景说明</label>
+                <textarea
+                  value={scenarioForm.description}
+                  onChange={(e) =>
+                    setScenarioForm({
+                      ...scenarioForm,
+                      description: e.target.value,
+                    })
+                  }
+                  placeholder="说明这类沟通的背景、目标和注意事项"
+                />
+              </div>
+              <div className="field full">
+                <label>参考模板（选填）</label>
+                <textarea
+                  value={scenarioForm.referenceTemplate}
+                  onChange={(e) =>
+                    setScenarioForm({
+                      ...scenarioForm,
+                      referenceTemplate: e.target.value,
+                    })
+                  }
+                  placeholder="粘贴参考话术、固定结构或希望 AI 借鉴的表达方式"
+                />
+              </div>
+            </div>
+            <div className="form-actions">
+              <button
+                type="button"
+                className="action secondary"
+                onClick={() => setShowScenarioForm(false)}
+              >
+                取消
+              </button>
+              <button className="action">
+                <ClipboardCheck size={16} /> 保存场景
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+    </div>
+  );
 }
 
-function PersonCard({person,onClick}:{person:Supervisor;onClick:()=>void}){const tags=safeJson(person.tags,[]);return <div className="person-card" onClick={onClick}><div className="avatar">{person.name.slice(0,1)}</div><h3>{person.name}</h3><p>{person.position||person.relation||"上级"}</p><div className="tags">{tags.slice(0,4).map((tag:string)=><span className="tag" key={tag}>{tag}</span>)}{!tags.length&&<span className="tag">待完善画像</span>}</div></div>}
-function HistoryCard({item,detailed}:{item:Rehearsal;detailed?:boolean}) {
-  const evaluation = getEvaluation(item);
-  const [showRecord,setShowRecord] = useState(false);
-  const [open,setOpen] = useState(false);
-  const [outcome,setOutcome] = useState("");
-  const [rating,setRating] = useState("5");
-  const [variance,setVariance] = useState("");
-  const [nextAction,setNextAction] = useState("");
-  const [saved,setSaved] = useState(Boolean(item.debrief));
-  const submit = async () => {
-    if (!outcome.trim()) return;
-    const response = await fetch(apiUrl(`/api/rehearsals/${item.id}/debrief`), { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({outcome,rating,variance,nextAction}) });
-    if (response.ok) { setSaved(true); setOpen(false); }
-  };
-  return <div className="history-card" style={{display:"block"}}>
-    <div style={{display:"flex",justifyContent:"space-between",gap:16,alignItems:"center"}}>
-      <div className="history-main">
-        <h3>{item.scenarioName} <span className="mode-badge" style={{marginLeft:8}}>{item.mode==="ai"?"AI 评估":"演示模式"}</span></h3>
-        <p>{item.supervisor?.name||"上级"} · {new Date(item.createdAt).toLocaleString("zh-CN",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"})}</p>
-      </div>
-      <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",justifyContent:"flex-end"}}>
-        <div className="history-score">{average(evaluation)}<small style={{fontSize:11,fontWeight:500}}>%</small></div>
-        {detailed&&<button className="action secondary" onClick={()=>setShowRecord(!showRecord)}>{showRecord?"收起记录":"查看记录"}</button>}
-        {detailed&&!saved&&<button className="action secondary" onClick={()=>setOpen(!open)}>{open?"收起复盘":"填写复盘"}</button>}
-        {detailed&&saved&&<span style={{fontSize:12,color:"var(--green)"}}>已复盘</span>}
+function PersonCard({
+  person,
+  onClick,
+}: {
+  person: Supervisor;
+  onClick: () => void;
+}) {
+  const tags = safeJson(person.tags, []);
+  return (
+    <div className="person-card" onClick={onClick}>
+      <div className="avatar">{person.name.slice(0, 1)}</div>
+      <h3>{person.name}</h3>
+      <p>{person.position || person.relation || "上级"}</p>
+      <div className="tags">
+        {tags.slice(0, 4).map((tag: string) => (
+          <span className="tag" key={tag}>
+            {tag}
+          </span>
+        ))}
+        {!tags.length && <span className="tag">待完善画像</span>}
       </div>
     </div>
-    {showRecord&&<div style={{marginTop:16,paddingTop:16,borderTop:"1px solid var(--line)"}}>
-      <div className="result-block"><h3>当时准备怎么说</h3><div className="rewrite">{item.inputText}</div></div>
-      {item.actionPlan&&<div className="result-block"><h3>行动计划</h3><div className="rewrite">{item.actionPlan}</div></div>}
-      {evaluation&&<><div className="score-grid"><div className="score"><small>风格匹配</small><strong>{evaluation.styleMatchScore}</strong></div><div className="score"><small>内容完整</small><strong>{evaluation.completenessScore}</strong></div><div className="score"><small>雷区安全</small><strong>{evaluation.riskAlertScore}</strong></div></div>
-      {evaluation.keyStrengths.length>0&&<div className="result-block"><h3>做得好的地方</h3><ul>{evaluation.keyStrengths.map((entry)=><li key={entry}>{entry}</li>)}</ul></div>}
-      {evaluation.riskAlerts.length>0&&<div className="result-block"><h3>值得留意</h3><ul>{evaluation.riskAlerts.map((entry)=><li key={entry}>{entry}</li>)}</ul></div>}
-      {evaluation.suggestions.length>0&&<div className="result-block"><h3>改进建议</h3><ul>{evaluation.suggestions.map((entry)=><li key={entry}>{entry}</li>)}</ul></div>}
-      <div className="result-block"><h3>建议这样说</h3><div className="rewrite">{evaluation.rewrittenVersion}</div></div></>}
-    </div>}
-    {open&&<div style={{marginTop:16,paddingTop:16,borderTop:"1px solid var(--line)"}}>
-      <div className="form-grid">
-        <div className="field full"><label>实际沟通结果 *</label><textarea value={outcome} onChange={(event)=>setOutcome(event.target.value)} placeholder="对方的反应、最终结果是什么？"/></div>
-        <div className="field"><label>结果满意度（1-5）</label><select value={rating} onChange={(event)=>setRating(event.target.value)}><option value="5">5 · 超出预期</option><option value="4">4 · 顺利达成</option><option value="3">3 · 基本达成</option><option value="2">2 · 有待改进</option><option value="1">1 · 未达成</option></select></div>
-        <div className="field"><label>和预测的偏差</label><input value={variance} onChange={(event)=>setVariance(event.target.value)} placeholder="哪里和预想不一样？"/></div>
-        <div className="field full"><label>下一步行动</label><input value={nextAction} onChange={(event)=>setNextAction(event.target.value)} placeholder="下一次准备怎么做？"/></div>
-      </div>
-      <div className="form-actions"><button className="action" onClick={submit}><ClipboardCheck size={16}/> 保存复盘</button></div>
-    </div>}
-  </div>;
+  );
 }
-function EvaluationPanel({result,onDebrief}:{result:{record:Rehearsal;evaluation:Evaluation};onDebrief:()=>void}){const e=result.evaluation; const checks=e.baselineChecks?.length?e.baselineChecks:baselineRequirements.map((label)=>({label,passed:false,note:"历史结果未记录逐项检查"})); return <div className="panel" style={{marginTop:20}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><div><div className="eyebrow">YOUR COACHING REPORT</div><h2 style={{fontSize:20,margin:"7px 0 0"}}>这次表达，可以更稳。</h2></div><span className="mode-badge">{e.mode==="ai"?"AI 评估":"演示模式"}</span></div><div className="score-grid"><div className="score"><small>风格匹配</small><strong>{e.styleMatchScore}</strong></div><div className="score"><small>内容完整</small><strong>{e.completenessScore}</strong></div><div className="score"><small>雷区安全</small><strong>{e.riskAlertScore}</strong></div></div><div className="result-block"><h3>基本要求检查</h3><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:8}}>{checks.map((check)=><div key={check.label} style={{display:"flex",gap:8,alignItems:"flex-start",fontSize:12,padding:"9px 10px",background:check.passed?"#edf8f1":"#fff6f0",borderRadius:7,color:check.passed?"#257c63":"#9b5d40"}}><span style={{fontWeight:700}}>{check.passed?"✓":"!"}</span><span>{check.label}</span></div>)}</div></div><div className="result-block"><h3>做得好的地方</h3><ul>{e.keyStrengths.map((x)=><li key={x}>{x}</li>)}</ul></div><div className="result-block"><h3>值得留意</h3><ul>{e.riskAlerts.map((x)=><li key={x}>{x}</li>)}</ul></div><div className="result-block"><h3>建议这样说</h3><div className="rewrite">{e.rewrittenVersion}</div></div><div className="form-actions"><button className="action secondary" onClick={onDebrief}><FileText size={16}/> 去做复盘</button></div></div>}
+function HistoryCard({
+  item,
+  detailed,
+  beta,
+}: {
+  item: Rehearsal;
+  detailed?: boolean;
+  beta?: boolean;
+}) {
+  const evaluation = getEvaluation(item);
+  const [showRecord, setShowRecord] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [outcome, setOutcome] = useState("");
+  const [rating, setRating] = useState("5");
+  const [variance, setVariance] = useState("");
+  const [adviceUsed, setAdviceUsed] = useState("");
+  const [aiAccuracy, setAiAccuracy] = useState("4");
+  const [continueUse, setContinueUse] = useState("");
+  const [nextAction, setNextAction] = useState("");
+  const [saved, setSaved] = useState(Boolean(item.debrief));
+  const submit = async () => {
+    if (!outcome.trim()) return;
+    const response = await fetch(apiUrl(`/api/rehearsals/${item.id}/debrief`), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        outcome,
+        rating,
+        variance,
+        nextAction,
+        adviceUsed: adviceUsed ? adviceUsed === "yes" : undefined,
+        aiAccuracy: beta ? aiAccuracy : undefined,
+        continueUse: continueUse ? continueUse === "yes" : undefined,
+      }),
+    });
+    if (response.ok) {
+      setSaved(true);
+      setOpen(false);
+    }
+  };
+  return (
+    <div className="history-card" style={{ display: "block" }}>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          gap: 16,
+          alignItems: "center",
+        }}
+      >
+        <div className="history-main">
+          <h3>
+            {item.scenarioName}{" "}
+            <span className="mode-badge" style={{ marginLeft: 8 }}>
+              {item.mode === "ai" ? "AI 评估" : "演示模式"}
+            </span>
+          </h3>
+          <p>
+            {item.supervisor?.name || "上级"} ·{" "}
+            {new Date(item.createdAt).toLocaleString("zh-CN", {
+              month: "numeric",
+              day: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+            })}
+          </p>
+        </div>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            flexWrap: "wrap",
+            justifyContent: "flex-end",
+          }}
+        >
+          <div className="history-score">
+            {average(evaluation)}
+            <small style={{ fontSize: 11, fontWeight: 500 }}>%</small>
+          </div>
+          {detailed && (
+            <button
+              className="action secondary"
+              onClick={() => setShowRecord(!showRecord)}
+            >
+              {showRecord ? "收起记录" : "查看记录"}
+            </button>
+          )}
+          {detailed && !saved && (
+            <button className="action secondary" onClick={() => setOpen(!open)}>
+              {open ? "收起复盘" : "填写复盘"}
+            </button>
+          )}
+          {detailed && saved && (
+            <span style={{ fontSize: 12, color: "var(--green)" }}>已复盘</span>
+          )}
+        </div>
+      </div>
+      {showRecord && (
+        <div
+          style={{
+            marginTop: 16,
+            paddingTop: 16,
+            borderTop: "1px solid var(--line)",
+          }}
+        >
+          <div className="result-block">
+            <h3>当时准备怎么说</h3>
+            <div className="rewrite">{item.inputText}</div>
+          </div>
+          {item.actionPlan && (
+            <div className="result-block">
+              <h3>行动计划</h3>
+              <div className="rewrite">{item.actionPlan}</div>
+            </div>
+          )}
+          {evaluation && (
+            <>
+              <div className="score-grid">
+                <div className="score">
+                  <small>风格匹配</small>
+                  <strong>{evaluation.styleMatchScore}</strong>
+                </div>
+                <div className="score">
+                  <small>内容完整</small>
+                  <strong>{evaluation.completenessScore}</strong>
+                </div>
+                <div className="score">
+                  <small>雷区安全</small>
+                  <strong>{evaluation.riskAlertScore}</strong>
+                </div>
+              </div>
+              {evaluation.keyStrengths.length > 0 && (
+                <div className="result-block">
+                  <h3>做得好的地方</h3>
+                  <ul>
+                    {evaluation.keyStrengths.map((entry) => (
+                      <li key={entry}>{entry}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {evaluation.riskAlerts.length > 0 && (
+                <div className="result-block">
+                  <h3>值得留意</h3>
+                  <ul>
+                    {evaluation.riskAlerts.map((entry) => (
+                      <li key={entry}>{entry}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {evaluation.suggestions.length > 0 && (
+                <div className="result-block">
+                  <h3>改进建议</h3>
+                  <ul>
+                    {evaluation.suggestions.map((entry) => (
+                      <li key={entry}>{entry}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              <div className="result-block">
+                <h3>建议这样说</h3>
+                <div className="rewrite">{evaluation.rewrittenVersion}</div>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+      {open && (
+        <div
+          style={{
+            marginTop: 16,
+            paddingTop: 16,
+            borderTop: "1px solid var(--line)",
+          }}
+        >
+          <div className="form-grid">
+            <div className="field full">
+              <label>实际沟通结果 *</label>
+              <textarea
+                value={outcome}
+                onChange={(event) => setOutcome(event.target.value)}
+                placeholder="对方的反应、最终结果是什么？"
+              />
+            </div>
+            <div className="field">
+              <label>结果满意度（1-5）</label>
+              <select
+                value={rating}
+                onChange={(event) => setRating(event.target.value)}
+              >
+                <option value="5">5 · 超出预期</option>
+                <option value="4">4 · 顺利达成</option>
+                <option value="3">3 · 基本达成</option>
+                <option value="2">2 · 有待改进</option>
+                <option value="1">1 · 未达成</option>
+              </select>
+            </div>
+            <div className="field">
+              <label>和预测的偏差</label>
+              <input
+                value={variance}
+                onChange={(event) => setVariance(event.target.value)}
+                placeholder="哪里和预想不一样？"
+              />
+            </div>
+            <div className="field full">
+              <label>下一步行动</label>
+              <input
+                value={nextAction}
+                onChange={(event) => setNextAction(event.target.value)}
+                placeholder="下一次准备怎么做？"
+              />
+            </div>
+            {beta && (
+              <>
+                <div className="field">
+                  <label>是否实际采用 AI 建议？</label>
+                  <select
+                    value={adviceUsed}
+                    onChange={(event) => setAdviceUsed(event.target.value)}
+                  >
+                    <option value="">请选择</option>
+                    <option value="yes">已采用</option>
+                    <option value="no">未采用</option>
+                  </select>
+                </div>
+                <div className="field">
+                  <label>AI 预测与实际一致度</label>
+                  <select
+                    value={aiAccuracy}
+                    onChange={(event) => setAiAccuracy(event.target.value)}
+                  >
+                    <option value="5">5 · 非常一致</option>
+                    <option value="4">4 · 基本一致</option>
+                    <option value="3">3 · 部分一致</option>
+                    <option value="2">2 · 偏差较大</option>
+                    <option value="1">1 · 完全不一致</option>
+                  </select>
+                </div>
+                <div className="field full">
+                  <label>是否愿意继续使用？</label>
+                  <select
+                    value={continueUse}
+                    onChange={(event) => setContinueUse(event.target.value)}
+                  >
+                    <option value="">请选择</option>
+                    <option value="yes">愿意继续使用</option>
+                    <option value="no">暂不继续使用</option>
+                  </select>
+                </div>
+              </>
+            )}
+          </div>
+          <div className="form-actions">
+            <button className="action" onClick={submit}>
+              <ClipboardCheck size={16} /> 保存复盘
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+function EvaluationPanel({
+  result,
+  onDebrief,
+  beta,
+}: {
+  result: { record: Rehearsal; evaluation: Evaluation };
+  onDebrief: () => void;
+  beta: boolean;
+}) {
+  const e = result.evaluation;
+  const checks = e.baselineChecks?.length
+    ? e.baselineChecks
+    : baselineRequirements.map((label) => ({
+        label,
+        passed: false,
+        note: "历史结果未记录逐项检查",
+      }));
+  return (
+    <div className="panel" style={{ marginTop: 20 }}>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+        }}
+      >
+        <div>
+          <div className="eyebrow">YOUR COACHING REPORT</div>
+          <h2 style={{ fontSize: 20, margin: "7px 0 0" }}>
+            这次表达，可以更稳。
+          </h2>
+        </div>
+        <span className="mode-badge">
+          {e.mode === "ai" ? "AI 评估" : "演示模式"}
+        </span>
+      </div>
+      <div className="score-grid">
+        <div className="score">
+          <small>风格匹配</small>
+          <strong>{e.styleMatchScore}</strong>
+        </div>
+        <div className="score">
+          <small>内容完整</small>
+          <strong>{e.completenessScore}</strong>
+        </div>
+        <div className="score">
+          <small>雷区安全</small>
+          <strong>{e.riskAlertScore}</strong>
+        </div>
+      </div>
+      <div className="result-block">
+        <h3>基本要求检查</h3>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))",
+            gap: 8,
+          }}
+        >
+          {checks.map((check) => (
+            <div
+              key={check.label}
+              style={{
+                display: "flex",
+                gap: 8,
+                alignItems: "flex-start",
+                fontSize: 12,
+                padding: "9px 10px",
+                background: check.passed ? "#edf8f1" : "#fff6f0",
+                borderRadius: 7,
+                color: check.passed ? "#257c63" : "#9b5d40",
+              }}
+            >
+              <span style={{ fontWeight: 700 }}>
+                {check.passed ? "✓" : "!"}
+              </span>
+              <span>{check.label}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="result-block">
+        <h3>做得好的地方</h3>
+        <ul>
+          {e.keyStrengths.map((x) => (
+            <li key={x}>{x}</li>
+          ))}
+        </ul>
+      </div>
+      <div className="result-block">
+        <h3>值得留意</h3>
+        <ul>
+          {e.riskAlerts.map((x) => (
+            <li key={x}>{x}</li>
+          ))}
+        </ul>
+      </div>
+      <div className="result-block">
+        <h3>建议这样说</h3>
+        <div className="rewrite">{e.rewrittenVersion}</div>
+      </div>
+      {beta && <BetaFeedback rehearsalId={result.record.id} />}
+      <div className="form-actions">
+        <button className="action secondary" onClick={onDebrief}>
+          <FileText size={16} /> 去做复盘
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function BetaFeedback({ rehearsalId }: { rehearsalId: string }) {
+  const [rating, setRating] = useState(0);
+  const [wouldUse, setWouldUse] = useState("");
+  const [issueType, setIssueType] = useState("");
+  const [note, setNote] = useState("");
+  const [saved, setSaved] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const submit = async () => {
+    if (!rating) return;
+    setBusy(true);
+    const response = await fetch(
+      apiUrl(`/api/rehearsals/${rehearsalId}/feedback`),
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          helpfulRating: rating,
+          wouldUseAdvice: wouldUse ? wouldUse === "yes" : undefined,
+          issueType,
+          note,
+        }),
+      },
+    );
+    setBusy(false);
+    if (response.ok) setSaved(true);
+  };
+
+  if (saved)
+    return (
+      <div className="beta-feedback saved">
+        反馈已保存，感谢你帮助我们校准评估质量。
+      </div>
+    );
+  return (
+    <section className="beta-feedback">
+      <div>
+        <strong>这份评估对你有帮助吗？</strong>
+        <span>约 20 秒</span>
+      </div>
+      <div className="rating-row" aria-label="有帮助程度">
+        {[1, 2, 3, 4, 5].map((value) => (
+          <button
+            key={value}
+            className={rating === value ? "active" : ""}
+            onClick={() => setRating(value)}
+          >
+            {value}
+          </button>
+        ))}
+      </div>
+      <div className="form-grid">
+        <div className="field">
+          <label>你会采用这份建议吗？</label>
+          <select
+            value={wouldUse}
+            onChange={(event) => setWouldUse(event.target.value)}
+          >
+            <option value="">暂不确定</option>
+            <option value="yes">会采用</option>
+            <option value="no">不会采用</option>
+          </select>
+        </div>
+        <div className="field">
+          <label>主要问题（选填）</label>
+          <select
+            value={issueType}
+            onChange={(event) => setIssueType(event.target.value)}
+          >
+            <option value="">没有明显问题</option>
+            <option>不够贴合领导</option>
+            <option>建议不够具体</option>
+            <option>表达不自然</option>
+            <option>风险判断不准确</option>
+            <option>其他</option>
+          </select>
+        </div>
+        <div className="field full">
+          <label>补充说明（选填）</label>
+          <textarea
+            maxLength={1000}
+            value={note}
+            onChange={(event) => setNote(event.target.value)}
+            placeholder="哪一句最有用，或哪里需要改进？"
+          />
+        </div>
+      </div>
+      <button
+        className="action secondary"
+        disabled={!rating || busy}
+        onClick={() => void submit()}
+      >
+        {busy ? "正在提交..." : "提交反馈"}
+      </button>
+    </section>
+  );
+}
