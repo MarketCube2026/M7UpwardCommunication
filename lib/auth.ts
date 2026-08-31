@@ -37,7 +37,7 @@ export async function issueAdminSession(adminId: string) {
   const expiresAt = new Date(Date.now() + 12 * 60 * 60 * 1000);
   await db.adminSession.create({ data: { adminId, tokenHash: hashSecret(token), expiresAt } });
   const store = await cookies();
-  store.set(ADMIN_COOKIE, token, { httpOnly: true, sameSite: "lax", secure: shouldUseSecureCookie(), path: "/admin", expires: expiresAt });
+  store.set(ADMIN_COOKIE, token, { httpOnly: true, sameSite: "lax", secure: shouldUseSecureCookie(), path: "/", expires: expiresAt });
 }
 
 export async function currentUser() {
