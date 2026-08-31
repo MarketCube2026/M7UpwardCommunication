@@ -53,6 +53,7 @@ async function main() {
   assert.equal(evaluationResponse.status, 200, await evaluationResponse.clone().text());
   const evaluation = await evaluationResponse.json();
   assert.equal(evaluation.evaluation.mode, "demo");
+  assert.equal(evaluation.usage.chargedFrom, "none");
   assert.equal(evaluation.usage.betaRemaining, 30);
 
   const feedback = await call(`/api/rehearsals/${evaluation.record.id}/feedback`, {

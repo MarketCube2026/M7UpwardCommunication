@@ -6,6 +6,14 @@ import { requireUser } from "@/lib/http";
 import { finalizeUsage, releaseUsage, reserveUsage, usageSummary } from "@/lib/billing";
 import { recordEvent } from "@/lib/auth";
 
+function chargedFrom(source: "FREE" | "BETA" | "PAID") {
+  return source.toLowerCase() as "free" | "beta" | "paid";
+}
+
+async function usageResponse(userId: string, source: "free" | "beta" | "paid" | "none") {
+  return { ...(await usageSummary(userId)), chargedFrom: source };
+}
+
 export async function POST(request: Request) {
   const auth = await requireUser();
   if ("response" in auth) return auth.response;
@@ -31,7 +39,8 @@ export async function POST(request: Request) {
     const existing = await db.rehearsal.findFirst({ where: { id: reservation.existingRehearsalId, userId: auth.user.id }, include: { supervisor: true } });
     if (existing) {
       const evaluation = JSON.parse(existing.evaluation);
-      return NextResponse.json({ record: existing, rehearsal: existing, evaluation, usage: await usageSummary(auth.user.id), clientRequestId });
+      const source = existing.mode === "ai" ? chargedFrom(reservation.chargeSource) : "none";
+      return NextResponse.json({ record: existing, rehearsal: existing, evaluation, usage: await usageResponse(auth.user.id, source), clientRequestId });
     }
   }
 
@@ -43,7 +52,8 @@ export async function POST(request: Request) {
     if (evaluation.mode === "ai") await finalizeUsage(reservation.attemptId, record.id, tokenUsage);
     else await releaseUsage(reservation.attemptId, "DEMO_MODE", record.id);
     await recordEvent(evaluation.mode === "ai" ? "EVALUATION_SUCCESS" : "EVALUATION_DEMO", auth.user.id, { scenarioId: scenario.id, rehearsalId: record.id });
-    return NextResponse.json({ record, rehearsal: record, evaluation, usage: await usageSummary(auth.user.id), clientRequestId });
+    const source = evaluation.mode === "ai" ? chargedFrom(reservation.chargeSource) : "none";
+    return NextResponse.json({ record, rehearsal: record, evaluation, usage: await usageResponse(auth.user.id, source), clientRequestId });
   } catch (error) {
     await releaseUsage(reservation.attemptId, "EVALUATION_FAILED");
     return NextResponse.json({ error: "本次评估未完成，次数已返还，请重试", code: "EVALUATION_FAILED" }, { status: 502 });
