@@ -39,12 +39,15 @@ const baselineRequirements = [
   "守住质量、合规、交付和客户影响边界，不把原话当作自己的判断",
 ];
 
-function headers(env: Env) {
-  return { "Content-Type": "application/json; charset=utf-8", "Access-Control-Allow-Origin": env.FRONTEND_ORIGIN || "*", "Access-Control-Allow-Headers": "Content-Type", "Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS" };
+function headers(env: Env, request?: Request) {
+  const configuredOrigins = (env.FRONTEND_ORIGIN ?? "").split(",").map((origin) => origin.trim()).filter(Boolean);
+  const requestOrigin = request?.headers.get("Origin") ?? "";
+  const allowedOrigin = configuredOrigins.length === 0 ? "*" : configuredOrigins.includes(requestOrigin) ? requestOrigin : configuredOrigins[0];
+  return { "Content-Type": "application/json; charset=utf-8", "Access-Control-Allow-Origin": allowedOrigin, "Access-Control-Allow-Headers": "Content-Type", "Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS" };
 }
 
-function response(env: Env, body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), { status, headers: headers(env) });
+function response(env: Env, request: Request, body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), { status, headers: headers(env, request) });
 }
 
 function text(value: unknown, max = 10_000) {
@@ -121,52 +124,54 @@ async function listRehearsals(env: Env) {
 
 const worker: ExportedHandler<Env> = {
   async fetch(request, env) {
-    if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: headers(env) });
+    if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: headers(env, request) });
     const url = new URL(request.url);
     const path = url.pathname.replace(/\/$/, "");
     const method = request.method;
 
-    if (path === "/api/health") return response(env, { status: "ok", storage: "d1", time: new Date().toISOString() });
-    if (path === "/api/settings") return response(env, { configured: Boolean(env.AI_BASE_URL && env.AI_API_KEY && env.AI_MODEL), provider: env.AI_BASE_URL ? "OpenAI-compatible" : "未配置", model: env.AI_MODEL ?? null, demoMode: env.DEMO_MODE === "true" || !env.AI_API_KEY });
+    const send = (body: unknown, status = 200) => response(env, request, body, status);
 
-    if (path === "/api/supervisors" && method === "GET") return response(env, await all(env.DB, "SELECT * FROM Supervisor ORDER BY updatedAt DESC"));
+    if (path === "/api/health") return send( { status: "ok", storage: "d1", time: new Date().toISOString() });
+    if (path === "/api/settings") return send( { configured: Boolean(env.AI_BASE_URL && env.AI_API_KEY && env.AI_MODEL), provider: env.AI_BASE_URL ? "OpenAI-compatible" : "未配置", model: env.AI_MODEL ?? null, demoMode: env.DEMO_MODE === "true" || !env.AI_API_KEY });
+
+    if (path === "/api/supervisors" && method === "GET") return send( await all(env.DB, "SELECT * FROM Supervisor ORDER BY updatedAt DESC"));
     if (path === "/api/supervisors" && method === "POST") {
-      const data = await body(request); const name = text(data.name, 80); if (!name) return response(env, { error: "姓名不能为空" }, 400);
+      const data = await body(request); const name = text(data.name, 80); if (!name) return send( { error: "姓名不能为空" }, 400);
       const item = { id: crypto.randomUUID(), name, position: text(data.position, 120) || null, relation: text(data.relation, 80) || null, tags: json(Array.isArray(data.tags) ? data.tags.slice(0, 12) : []), communicationPrefs: json(data.communicationPrefs), workStyle: json(data.workStyle), taboos: text(data.taboos, 1000) || null, notes: text(data.notes, 3000) || null };
       await env.DB.prepare("INSERT INTO Supervisor (id,name,position,relation,tags,communicationPrefs,workStyle,taboos,notes) VALUES (?,?,?,?,?,?,?,?,?)").bind(item.id,item.name,item.position,item.relation,item.tags,item.communicationPrefs,item.workStyle,item.taboos,item.notes).run();
-      return response(env, await first(env.DB, "SELECT * FROM Supervisor WHERE id=?", item.id), 201);
+      return send( await first(env.DB, "SELECT * FROM Supervisor WHERE id=?", item.id), 201);
     }
     const supervisorMatch = path.match(/^\/api\/supervisors\/([^/]+)$/);
     if (supervisorMatch) {
       const id = decodeURIComponent(supervisorMatch[1]);
-      if (method === "GET") { const item = await first(env.DB, "SELECT * FROM Supervisor WHERE id=?", id); return item ? response(env, item) : response(env, { error: "档案不存在" }, 404); }
-      if (method === "DELETE") { await env.DB.prepare("DELETE FROM Supervisor WHERE id=?").bind(id).run(); return response(env, { ok: true }); }
-      if (method === "PATCH") { const data = await body(request); const name = text(data.name, 80); if (!name) return response(env, { error: "姓名不能为空" }, 400); await env.DB.prepare("UPDATE Supervisor SET name=?,position=?,relation=?,tags=?,communicationPrefs=?,workStyle=?,taboos=?,notes=?,updatedAt=CURRENT_TIMESTAMP WHERE id=?").bind(name,text(data.position,120)||null,text(data.relation,80)||null,json(Array.isArray(data.tags)?data.tags.slice(0,12):[]),json(data.communicationPrefs),json(data.workStyle),text(data.taboos,1000)||null,text(data.notes,3000)||null,id).run(); return response(env, await first(env.DB,"SELECT * FROM Supervisor WHERE id=?",id)); }
+      if (method === "GET") { const item = await first(env.DB, "SELECT * FROM Supervisor WHERE id=?", id); return item ? send( item) : send( { error: "档案不存在" }, 404); }
+      if (method === "DELETE") { await env.DB.prepare("DELETE FROM Supervisor WHERE id=?").bind(id).run(); return send( { ok: true }); }
+      if (method === "PATCH") { const data = await body(request); const name = text(data.name, 80); if (!name) return send( { error: "姓名不能为空" }, 400); await env.DB.prepare("UPDATE Supervisor SET name=?,position=?,relation=?,tags=?,communicationPrefs=?,workStyle=?,taboos=?,notes=?,updatedAt=CURRENT_TIMESTAMP WHERE id=?").bind(name,text(data.position,120)||null,text(data.relation,80)||null,json(Array.isArray(data.tags)?data.tags.slice(0,12):[]),json(data.communicationPrefs),json(data.workStyle),text(data.taboos,1000)||null,text(data.notes,3000)||null,id).run(); return send( await first(env.DB,"SELECT * FROM Supervisor WHERE id=?",id)); }
     }
 
-    if (path === "/api/scenarios" && method === "GET") return response(env, await all(env.DB, "SELECT * FROM Scenario ORDER BY builtin DESC, createdAt ASC"));
-    if (path === "/api/scenarios" && method === "POST") { const data = await body(request); const name = text(data.name,80); if (!name) return response(env,{error:"场景名称不能为空"},400); const item={id:crypto.randomUUID(),name,description:text(data.description,2000)||null,referenceTemplate:text(data.referenceTemplate,5000)||null}; await env.DB.prepare("INSERT INTO Scenario (id,name,description,referenceTemplate) VALUES (?,?,?,?)").bind(item.id,item.name,item.description,item.referenceTemplate).run(); return response(env, {...item,builtin:false},201); }
+    if (path === "/api/scenarios" && method === "GET") return send( await all(env.DB, "SELECT * FROM Scenario ORDER BY builtin DESC, createdAt ASC"));
+    if (path === "/api/scenarios" && method === "POST") { const data = await body(request); const name = text(data.name,80); if (!name) return send({error:"场景名称不能为空"},400); const item={id:crypto.randomUUID(),name,description:text(data.description,2000)||null,referenceTemplate:text(data.referenceTemplate,5000)||null}; await env.DB.prepare("INSERT INTO Scenario (id,name,description,referenceTemplate) VALUES (?,?,?,?)").bind(item.id,item.name,item.description,item.referenceTemplate).run(); return send( {...item,builtin:false},201); }
 
-    if (path === "/api/rehearsals" && method === "GET") return response(env, await listRehearsals(env));
+    if (path === "/api/rehearsals" && method === "GET") return send( await listRehearsals(env));
     if (path === "/api/rehearsals/evaluate" && method === "POST") {
       const data = await body(request); const supervisorId=text(data.supervisorId,100), scenarioId=text(data.scenarioId,100), inputText=text(data.inputText,10_000), actionPlan=text(data.actionPlan,5000)||null;
-      if (!supervisorId || !scenarioId || !inputText) return response(env,{error:"请输入完整内容"},400);
+      if (!supervisorId || !scenarioId || !inputText) return send({error:"请输入完整内容"},400);
       const supervisor=await first(env.DB,"SELECT * FROM Supervisor WHERE id=?",supervisorId), scenario=await first(env.DB,"SELECT * FROM Scenario WHERE id=?",scenarioId);
-      if (!supervisor || !scenario) return response(env,{error:"上级或场景不存在"},404);
+      if (!supervisor || !scenario) return send({error:"上级或场景不存在"},404);
       const snapshot={...supervisor,tags:JSON.parse(String(supervisor.tags||"[]")),communicationPrefs:JSON.parse(String(supervisor.communicationPrefs||"{}")),workStyle:JSON.parse(String(supervisor.workStyle||"{}"))};
       const evaluation=await evaluate(env,{inputText,actionPlan},snapshot,scenario); const id=crypto.randomUUID();
       await env.DB.prepare("INSERT INTO Rehearsal (id,supervisorId,scenarioId,scenarioName,supervisorSnapshot,inputText,actionPlan,evaluation,mode) VALUES (?,?,?,?,?,?,?,?,?)").bind(id,supervisorId,scenarioId,String(scenario.name),json(snapshot),inputText,actionPlan,json(evaluation),String(evaluation.mode)).run();
-      return response(env,{id,supervisorId,scenarioId,scenarioName:scenario.name,inputText,actionPlan,evaluation,mode:evaluation.mode,createdAt:new Date().toISOString(),supervisor:{id:supervisorId,name:supervisor.name}});
+      return send({id,supervisorId,scenarioId,scenarioName:scenario.name,inputText,actionPlan,evaluation,mode:evaluation.mode,createdAt:new Date().toISOString(),supervisor:{id:supervisorId,name:supervisor.name}});
     }
     const debriefMatch=path.match(/^\/api\/rehearsals\/([^/]+)\/debrief$/);
-    if (debriefMatch && method === "POST") { const data=await body(request), outcome=text(data.outcome,5000); if(!outcome)return response(env,{error:"请填写实际沟通结果"},400); const rehearsalId=decodeURIComponent(debriefMatch[1]); const id=crypto.randomUUID(); await env.DB.prepare("INSERT INTO Debrief (id,rehearsalId,outcome,rating,variance,nextAction) VALUES (?,?,?,?,?,?) ON CONFLICT(rehearsalId) DO UPDATE SET outcome=excluded.outcome,rating=excluded.rating,variance=excluded.variance,nextAction=excluded.nextAction").bind(id,rehearsalId,outcome,Number(data.rating)||null,text(data.variance,2000)||null,text(data.nextAction,2000)||null).run(); return response(env,{ok:true}); }
+    if (debriefMatch && method === "POST") { const data=await body(request), outcome=text(data.outcome,5000); if(!outcome)return send({error:"请填写实际沟通结果"},400); const rehearsalId=decodeURIComponent(debriefMatch[1]); const id=crypto.randomUUID(); await env.DB.prepare("INSERT INTO Debrief (id,rehearsalId,outcome,rating,variance,nextAction) VALUES (?,?,?,?,?,?) ON CONFLICT(rehearsalId) DO UPDATE SET outcome=excluded.outcome,rating=excluded.rating,variance=excluded.variance,nextAction=excluded.nextAction").bind(id,rehearsalId,outcome,Number(data.rating)||null,text(data.variance,2000)||null,text(data.nextAction,2000)||null).run(); return send({ok:true}); }
     const rehearsalMatch=path.match(/^\/api\/rehearsals\/([^/]+)$/);
-    if (rehearsalMatch && method === "GET") { const item=await first(env.DB,"SELECT r.*,s.name AS supervisorName,d.id AS debriefId FROM Rehearsal r JOIN Supervisor s ON s.id=r.supervisorId LEFT JOIN Debrief d ON d.rehearsalId=r.id WHERE r.id=?",decodeURIComponent(rehearsalMatch[1])); return item?response(env,rehearsal(item)):response(env,{error:"记录不存在"},404); }
+    if (rehearsalMatch && method === "GET") { const item=await first(env.DB,"SELECT r.*,s.name AS supervisorName,d.id AS debriefId FROM Rehearsal r JOIN Supervisor s ON s.id=r.supervisorId LEFT JOIN Debrief d ON d.rehearsalId=r.id WHERE r.id=?",decodeURIComponent(rehearsalMatch[1])); return item?send(rehearsal(item)):send({error:"记录不存在"},404); }
 
     const reportMatch=path.match(/^\/api\/reports\/supervisors\/([^/]+)$/);
-    if(reportMatch && method==="GET") { const rows=await all(env.DB,"SELECT evaluation,createdAt FROM Rehearsal WHERE supervisorId=? ORDER BY createdAt ASC",decodeURIComponent(reportMatch[1])); const scores=rows.map((row)=>{try{const item=JSON.parse(String(row.evaluation));return Math.round((Number(item.styleMatchScore)+Number(item.completenessScore)+Number(item.riskAlertScore))/3)}catch{return 0}}); return response(env,{count:rows.length,averageScore:scores.length?Math.round(scores.reduce((sum,score)=>sum+score,0)/scores.length):0,trend:rows.map((row,index)=>({createdAt:row.createdAt,score:scores[index]}))}); }
-    if(path==="/api/backups" && method==="POST") { if(!env.FILES)return response(env,{error:"R2 未绑定"},503); const snapshot={createdAt:new Date().toISOString(),supervisors:await all(env.DB,"SELECT * FROM Supervisor"),scenarios:await all(env.DB,"SELECT * FROM Scenario"),rehearsals:await all(env.DB,"SELECT * FROM Rehearsal"),debriefs:await all(env.DB,"SELECT * FROM Debrief")}; const key=`backups/zhibi-${snapshot.createdAt.replace(/[:.]/g,"-")}.json`; await env.FILES.put(key,JSON.stringify(snapshot),{httpMetadata:{contentType:"application/json"}}); return response(env,{ok:true,key}); }
-    return response(env,{error:"接口不存在"},404);
+    if(reportMatch && method==="GET") { const rows=await all(env.DB,"SELECT evaluation,createdAt FROM Rehearsal WHERE supervisorId=? ORDER BY createdAt ASC",decodeURIComponent(reportMatch[1])); const scores=rows.map((row)=>{try{const item=JSON.parse(String(row.evaluation));return Math.round((Number(item.styleMatchScore)+Number(item.completenessScore)+Number(item.riskAlertScore))/3)}catch{return 0}}); return send({count:rows.length,averageScore:scores.length?Math.round(scores.reduce((sum,score)=>sum+score,0)/scores.length):0,trend:rows.map((row,index)=>({createdAt:row.createdAt,score:scores[index]}))}); }
+    if(path==="/api/backups" && method==="POST") { if(!env.FILES)return send({error:"R2 未绑定"},503); const snapshot={createdAt:new Date().toISOString(),supervisors:await all(env.DB,"SELECT * FROM Supervisor"),scenarios:await all(env.DB,"SELECT * FROM Scenario"),rehearsals:await all(env.DB,"SELECT * FROM Rehearsal"),debriefs:await all(env.DB,"SELECT * FROM Debrief")}; const key=`backups/zhibi-${snapshot.createdAt.replace(/[:.]/g,"-")}.json`; await env.FILES.put(key,JSON.stringify(snapshot),{httpMetadata:{contentType:"application/json"}}); return send({ok:true,key}); }
+    return send({error:"接口不存在"},404);
   },
 };
 
