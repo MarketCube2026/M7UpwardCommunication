@@ -28,7 +28,7 @@ sudo usermod -aG docker "$USER"
 ```bash
 git clone --branch codex/public-beta https://github.com/MarketCube2026/M7UpwardCommunication.git zhibi
 cd zhibi/deploy/tencent-hk
-cp .env.server.example .env.server
+cp server.env.example .env.server
 chmod 600 .env.server
 # 编辑 .env.server，填写域名、数据库随机密码、DeepSeek 和管理员配置
 docker compose --env-file .env.server up -d --build
